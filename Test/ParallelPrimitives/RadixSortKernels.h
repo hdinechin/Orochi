@@ -3,7 +3,9 @@
 
 using namespace Oro;
 typedef unsigned char u8;
+typedef unsigned short u16;
 typedef unsigned int u32;
+typedef unsigned long long u64;
 
 #define THE_FIRST_THREAD threadIdx.x == 0 && blockIdx.x == 0
 
@@ -82,38 +84,6 @@ extern "C" __global__ void CountKernel( int* gSrc, int* gDst, int gN, int gNItem
 {
 	const int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
 	const int offset = blockIdx.x * blockDim.x * gNItemsPerWI;
-
-/*
-	int value = 1;
-	__shared__ int scanned[WG_SIZE];
-
-	{
-		unsigned int mask = 0xffffffff;
-		int width = 32;
-		for( int i = 1; i <= width; i *= 2 )
-		{
-			int n = __shfl_up_sync( mask, value, i, width );
-
-			if( threadIdx.x >= i ) value += n;
-		}
-
-		{//make it exclusive
-			value = __shfl_up_sync( mask, value, 1, width );
-			if( threadIdx.x == 0 ) value = 0;
-		}
-		scanned[threadIdx.x] = value;
-
-		LDS_BARRIER;
-
-		if( gIdx == 0 )
-		{
-			for(int i=0; i<WG_SIZE; i++)
-				printf("%d,", scanned[i]);
-			int a = 0;
-			a ++;
-		}
-	}
-*/
 
 	__shared__ union
 	{
@@ -204,258 +174,83 @@ __device__ int ldsScan( int* lds, int width )
 	return sum;
 }
 
-
-__device__ void localSort4bit( u32* ldsKeys, u32 ldsTemp[WG_SIZE][16], u32 ldsTemp1[16], const int START_BIT )
+template<typename T, int STRIDE>
+struct ScanImpl
 {
-	int key = ldsKeys[threadIdx.x];
-	int in4bit = ( key >> START_BIT ) & 0xf;
-	for(int i=0; i<16; i++)
+	__device__ static T exec( T a )
 	{
-		ldsTemp[threadIdx.x][i] = 0;
+		T b = __shfl( a, threadIdx.x - STRIDE );
+		if( threadIdx.x >= STRIDE ) a += b;
+		return ScanImpl<T,STRIDE * 2>::exec( a );
 	}
-	ldsTemp[threadIdx.x][in4bit] = 1;
+};
 
-	LDS_BARRIER;
-
-	if( threadIdx.x < 16 )
+template<typename T>
+struct ScanImpl<T,WG_SIZE>
+{
+	__device__ static T exec( T a )
 	{
-		int sum = 0;
-		for(int i=0; i<WG_SIZE; i++)
-		{
-			int t = ldsTemp[i][threadIdx.x];
-			ldsTemp[i][threadIdx.x] = sum;
-			sum += t;
-		}
-		ldsTemp1[threadIdx.x] = sum;
+		return a;
 	}
-	LDS_BARRIER;
-	if( threadIdx.x == 0 )
+};
+
+template<typename T>
+__device__ 
+void waveScanInclusive( T& a, int width ) 
+{
+#if 0
+	a = ScanImpl<T, 1>::exec( a );
+#else
+	for( int i = 1; i < width; i *= 2 )
 	{
-		int sum = 0;
-		for(int i=0; i<16; i++)
-		{
-			int t = ldsTemp1[i];
-			ldsTemp1[i] = sum;
-			sum += t;
-		}
+		T b = __shfl( a, threadIdx.x - i );
+		if( threadIdx.x >= i ) a += b;
 	}
-	LDS_BARRIER;
-
-	int offset = ldsTemp1[in4bit];
-	int rank = ldsTemp[threadIdx.x][in4bit];
-
-	ldsKeys[ offset + rank ] = key;
-
-	LDS_BARRIER;
+#endif
 }
 
-__device__ void localSort8bit( u32* ldsKeys, u32 ldsTemp[WG_SIZE][16], u32 ldsTemp1[16], const int START_BIT )
+template<typename T>
+__device__ T waveScanExclusive( T& a, int width )
+{
+	waveScanInclusive( a, width );
+
+	T sum = __shfl( a, width-1 );
+	a = __shfl( a, threadIdx.x-1 );
+	if( threadIdx.x == 0 ) a = 0;
+
+	return sum;
+}
+
+template<typename T>
+__device__ void ldsScanInclusive( T* lds, int width ) 
+{
+	for( int i = 1; i < width; i *= 2 )
+	{
+		int src = threadIdx.x - i;
+		T a = ( src < 0 ) ? 0 : lds[src];
+		LDS_BARRIER;
+		if( threadIdx.x >= i ) lds[threadIdx.x] += a;
+		LDS_BARRIER;
+	}
+}
+
+template<typename T>
+__device__ T ldsScanExclusive( T* lds, int width )
 { 
-	localSort4bit( ldsKeys, ldsTemp, ldsTemp1, START_BIT );
-	if( N_RADIX  > 4 )
-		localSort4bit( ldsKeys, ldsTemp, ldsTemp1, START_BIT+4 );
-}
+	ldsScanInclusive( lds, width );
 
-
-extern "C" __global__ void SortKernel( int* gSrc, int* gDst, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
-{
-	const int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
-	const int offset = blockIdx.x * blockDim.x * gNItemsPerWI;
-	const int wgIdx = blockIdx.x;
-
-	__shared__ int localOffsets[BIN_SIZE];
-	__shared__ u32 ldsKeys[WG_SIZE];
-	__shared__ u32 ldsTemp[WG_SIZE][16];
-	__shared__ u32 ldsTemp1[16];
-	__shared__ int ldsHistogram[BIN_SIZE];
-	__shared__ int ldsScanned[BIN_SIZE];
-
-	for( int i = threadIdx.x; i < BIN_SIZE; i += WG_SIZE )
-	{
-		localOffsets[i] = gHistogram[i * N_WGS_EXECUTED + wgIdx];
-	}
+	T sum = lds[width-1];
+	lds[threadIdx.x] = (threadIdx.x == 0 )? 0 : lds[threadIdx.x-1];
 	LDS_BARRIER;
-
-	for( int ii = 0; ii < gNItemsPerWI; ii++ )
-	{
-		int idx = offset + threadIdx.x * gNItemsPerWI + ii;
-
-		int key;
-		int tableIdx;
-		ldsKeys[threadIdx.x] = 0xffffffff;
-		if( idx < gN )
-		{
-			key = gSrc[idx];
-			ldsKeys[threadIdx.x] = key;
-		}
-
-		localSort8bit( ldsKeys, ldsTemp, ldsTemp1, START_BIT );
-
-		for(int i = threadIdx.x; i<BIN_SIZE; i+=WG_SIZE)
-			ldsHistogram[i] = 0;
-		LDS_BARRIER;
-		{
-			int tableIdx = ( ldsKeys[threadIdx.x] >> START_BIT ) & RADIX_MASK;
-			atomicAdd( &ldsHistogram[tableIdx], 1 );
-		}
-		LDS_BARRIER;
-		if( threadIdx.x == 0 )//todo. parallel scan
-		{
-			int sum = 0;
-			for(int i=0; i<BIN_SIZE; i++)
-			{
-				int t = ldsHistogram[i];
-				ldsScanned[i] = sum;
-				sum += t;
-			}
-		}
-		LDS_BARRIER;
-		if( idx < gN )
-		{
-			int tableIdx = ( ldsKeys[threadIdx.x] >> START_BIT ) & RADIX_MASK;
-			int dstIdx = localOffsets[tableIdx] + threadIdx.x - ldsScanned[tableIdx];
-			gDst[dstIdx] = ldsKeys[threadIdx.x];
-		}
-		LDS_BARRIER;
-		for( int i = threadIdx.x; i < BIN_SIZE; i += WG_SIZE )
-		{
-			localOffsets[i] += ldsHistogram[i];//todo. ldsHistogram can be private
-		}
-	}
-}
-
-__device__ void localSort4bit( int* keys, u32* ldsKeys, u32 ldsTemp[WG_SIZE][N_BINS_4BIT], u32 ldsTemp1[N_BINS_4BIT], const int START_BIT )
-{
-	int key = keys[0];
-	int in4bit = ( key >> START_BIT ) & 0xf;
-	for( int i = 0; i < N_BINS_4BIT; i++ )
-	{
-		ldsTemp[threadIdx.x][i] = 0;
-	}
-	ldsTemp[threadIdx.x][in4bit] = 1;
-
-	LDS_BARRIER;
-
-	if( threadIdx.x < N_BINS_4BIT )
-	{
-		int sum = 0;
-		for( int i = 0; i < WG_SIZE; i++ )
-		{
-			int t = ldsTemp[i][threadIdx.x];
-			ldsTemp[i][threadIdx.x] = sum;
-			sum += t;
-		}
-		ldsTemp1[threadIdx.x] = sum;
-	}
-	LDS_BARRIER;
-	if( threadIdx.x == 0 )
-	{
-		int sum = 0;
-		for( int i = 0; i < N_BINS_4BIT; i++ )
-		{
-			int t = ldsTemp1[i];
-			ldsTemp1[i] = sum;
-			sum += t;
-		}
-	}
-	LDS_BARRIER;
-
-	int offset = ldsTemp1[in4bit];
-	int rank = ldsTemp[threadIdx.x][in4bit];
-
-	ldsKeys[offset + rank] = key;
-
-	LDS_BARRIER;
-
-	keys[0] = ldsKeys[threadIdx.x];
-}
-
-__device__ void localSort8bit( int* keys, u32* ldsKeys, u32 ldsTemp[WG_SIZE][N_BINS_4BIT], u32 ldsTemp1[N_BINS_4BIT], const int START_BIT )
-{
-	localSort4bit( keys, ldsKeys, ldsTemp, ldsTemp1, START_BIT );
-	if( N_RADIX > 4 ) localSort4bit( keys, ldsKeys, ldsTemp, ldsTemp1, START_BIT + 4 );
-}
-
-extern "C" __global__ void SortKernel1( int* gSrc, int* gDst, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
-{
-	const int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
-	const int offset = blockIdx.x * blockDim.x * gNItemsPerWI;
-	const int wgIdx = blockIdx.x;
-
-	__shared__ u32 localOffsets[BIN_SIZE];
-	__shared__ u32 ldsKeys[WG_SIZE];//todo. can be aliased
-	__shared__ u32 ldsTemp[WG_SIZE][N_BINS_4BIT];
-	__shared__ u32 ldsTemp1[N_BINS_4BIT];
-
-	__shared__ int ldsHistogram[BIN_SIZE];//todo. can be aliased
-
-	int histogram[N_BINS_PER_WI] = {0};
-	int keys = 0;
-
-	for( int i = threadIdx.x; i < BIN_SIZE; i += WG_SIZE )
-	{
-		localOffsets[i] = gHistogram[i * N_WGS_EXECUTED + wgIdx];
-	}
-	LDS_BARRIER;
-
-	for( int ii = 0; ii < gNItemsPerWI; ii++ )
-	{
-		int idx = offset + threadIdx.x * gNItemsPerWI + ii;
-
-		int tableIdx;
-		keys = 0xffffffff;
-		if( idx < gN )
-		{
-			keys = gSrc[idx];
-		}
-
-		localSort8bit( &keys, ldsKeys, ldsTemp, ldsTemp1, START_BIT );
-
-		for( int i = threadIdx.x; i < BIN_SIZE; i += WG_SIZE )
-			ldsHistogram[i] = 0;
-		LDS_BARRIER;
-		{
-			int tableIdx = ( keys >> START_BIT ) & RADIX_MASK;
-			atomicAdd( &ldsHistogram[tableIdx], 1 );
-		}
-		LDS_BARRIER;
-		for(int i=0; i<N_BINS_PER_WI; i++)
-		{
-			histogram[i] = ldsHistogram[threadIdx.x * N_BINS_PER_WI + i];
-		}
-
-		if( threadIdx.x == 0 ) // todo. parallel scan
-		{
-			int sum = 0;
-			for( int i = 0; i < BIN_SIZE; i++ )
-			{
-				int t = ldsHistogram[i];
-				ldsHistogram[i] = sum;
-				sum += t;
-			}
-		}
-		LDS_BARRIER;
-		if( idx < gN )
-		{
-			int tableIdx = ( keys >> START_BIT ) & RADIX_MASK;
-			int dstIdx = localOffsets[tableIdx] + threadIdx.x - ldsHistogram[tableIdx];
-			gDst[dstIdx] = keys;
-		}
-		LDS_BARRIER;
-
-		for( int i = 0; i < N_BINS_PER_WI; i++ )
-		{
-			int idx = threadIdx.x * N_BINS_PER_WI + i;
-			localOffsets[idx] += histogram[i];
-		}
-
-	}
+	return sum;
 }
 
 //========================
 
-__device__ void localSort4bitMulti( int* keys, u32* ldsKeys, u32 ldsTemp[WG_SIZE][N_BINS_4BIT], u32 ldsTemp1[N_BINS_4BIT], const int START_BIT )
+__device__ void localSort4bitMultiRef( int* keys, u32* ldsKeys, const int START_BIT )
 {
+	__shared__ u32 ldsTemp[WG_SIZE + 1][N_BINS_4BIT];
+
 	for( int i = 0; i < N_BINS_4BIT; i++ )
 	{
 		ldsTemp[threadIdx.x][i] = 0;
@@ -477,7 +272,7 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, u32 ldsTemp[WG_SIZE
 			ldsTemp[i][threadIdx.x] = sum;
 			sum += t;
 		}
-		ldsTemp1[threadIdx.x] = sum;
+		ldsTemp[WG_SIZE][threadIdx.x] = sum;
 	}
 	LDS_BARRIER;
 	if( threadIdx.x == 0 )//todo parallel scan
@@ -485,8 +280,8 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, u32 ldsTemp[WG_SIZE
 		int sum = 0;
 		for( int i = 0; i < N_BINS_4BIT; i++ )
 		{
-			int t = ldsTemp1[i];
-			ldsTemp1[i] = sum;
+			int t = ldsTemp[WG_SIZE][i];
+			ldsTemp[WG_SIZE][i] = sum;
 			sum += t;
 		}
 	}
@@ -495,7 +290,7 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, u32 ldsTemp[WG_SIZE
 	for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
 	{
 		int in4bit = ( keys[i] >> START_BIT ) & 0xf;
-		int offset = ldsTemp1[in4bit];
+		int offset = ldsTemp[WG_SIZE][in4bit];
 		int rank = ldsTemp[threadIdx.x][in4bit]++;
 
 		ldsKeys[offset + rank] = keys[i];
@@ -508,10 +303,92 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, u32 ldsTemp[WG_SIZE
 	}
 }
 
-__device__ void localSort8bitMulti( int* keys, u32* ldsKeys, u32 ldsTemp[WG_SIZE][N_BINS_4BIT], u32 ldsTemp1[N_BINS_4BIT], const int START_BIT )
+__device__ void localSort4bitMulti( int* keys, u32* ldsKeys, const int START_BIT )
 {
-	localSort4bitMulti( keys, ldsKeys, ldsTemp, ldsTemp1, START_BIT );
-	if( N_RADIX > 4 ) localSort4bitMulti( keys, ldsKeys, ldsTemp, ldsTemp1, START_BIT + 4 );
+	__shared__ union
+	{
+		u16 m_unpacked[WG_SIZE + 1][N_BINS_PACKED_4BIT][N_BINS_PACK_FACTOR];
+		u64 m_packed[WG_SIZE + 1][N_BINS_PACKED_4BIT];
+	} lds;
+	__shared__ u64 ldsTemp[WG_SIZE];//todo. remove me
+
+	for( int i = 0; i < N_BINS_PACKED_4BIT; i++ )
+	{
+		lds.m_packed[threadIdx.x][i] = 0;
+	}
+
+	for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
+	{
+		int in4bit = ( keys[i] >> START_BIT ) & 0xf;
+		int packIdx = in4bit/N_BINS_PACK_FACTOR;
+		int idx = in4bit % N_BINS_PACK_FACTOR;
+		lds.m_unpacked[threadIdx.x][packIdx][idx] += 1;
+	}
+
+	LDS_BARRIER;
+
+#if 0
+	if( threadIdx.x < N_BINS_PACKED_4BIT ) // 16 scans, pack 4 scans into 1 to make 4 parallel scans
+	{
+		u64 sum = 0;
+		for( int i = 0; i < WG_SIZE; i++ )
+		{
+			u64 t = lds.m_packed[i][threadIdx.x];
+			lds.m_packed[i][threadIdx.x] = sum;
+			sum += t;
+		}
+		lds.m_packed[WG_SIZE][threadIdx.x] = sum;
+	}
+#else
+	for( int ii = 0; ii < N_BINS_PACKED_4BIT; ii++)
+	{
+		ldsTemp[threadIdx.x] = lds.m_packed[threadIdx.x][ii];
+		LDS_BARRIER;
+		u64 sum = ldsScanExclusive( ldsTemp, WG_SIZE );
+		LDS_BARRIER;
+		lds.m_packed[threadIdx.x][ii] = ldsTemp[threadIdx.x];
+
+		if( threadIdx.x == 0 ) lds.m_packed[WG_SIZE][ii] = sum;
+	}
+#endif
+	LDS_BARRIER;
+	if( threadIdx.x == 0 ) // todo. parallel scan
+	{
+		int sum = 0;
+		for( int i = 0; i < N_BINS_PACKED_4BIT; i++ )
+		{
+			for( int j = 0; j < N_BINS_PACK_FACTOR; j++)
+			{
+				int t = lds.m_unpacked[WG_SIZE][i][j];
+				lds.m_unpacked[WG_SIZE][i][j] = sum;
+				sum += t;
+			}
+		}
+	}
+	LDS_BARRIER;
+
+	for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
+	{
+		int in4bit = ( keys[i] >> START_BIT ) & 0xf;
+		int packIdx = in4bit / N_BINS_PACK_FACTOR;
+		int idx = in4bit % N_BINS_PACK_FACTOR;
+		int offset = lds.m_unpacked[WG_SIZE][packIdx][idx];
+		int rank = lds.m_unpacked[threadIdx.x][packIdx][idx]++;
+
+		ldsKeys[offset + rank] = keys[i];
+	}
+	LDS_BARRIER;
+
+	for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
+	{
+		keys[i] = ldsKeys[threadIdx.x * SORT_N_ITEMS_PER_WI + i];
+	}
+}
+
+__device__ void localSort8bitMulti( int* keys, u32* ldsKeys, const int START_BIT )
+{
+	localSort4bitMulti( keys, ldsKeys, START_BIT );
+	if( N_RADIX > 4 ) localSort4bitMulti( keys, ldsKeys, START_BIT + 4 );
 }
 
 extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
@@ -523,11 +400,34 @@ extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, i
 	__shared__ u32 localOffsets[BIN_SIZE];
 
 	__shared__ u32 ldsKeys[WG_SIZE * SORT_N_ITEMS_PER_WI]; // todo. can be aliased
-	__shared__ u32 ldsTemp[WG_SIZE][N_BINS_4BIT];
-	__shared__ u32 ldsTemp1[N_BINS_4BIT];
 
 	__shared__ int ldsHistogram[BIN_SIZE]; // todo. can be aliased
+#if 0
+	{
+		int a = 1;
 
+		int width = WG_SIZE;
+/*
+		for( int i = 1; i < width; i*=2 )
+		{
+			int b = __shfl( a, threadIdx.x - i );
+			if( threadIdx.x >= i ) a += b;
+		}
+*/
+		a = 1;
+		ldsHistogram[threadIdx.x] = a;
+		LDS_BARRIER;
+		int sum = ldsScanExclusive( ldsHistogram, width );
+		LDS_BARRIER;
+		if( THE_FIRST_THREAD )
+		{
+			for(int i=0; i<WG_SIZE; i++)
+				printf( "%d,", ldsHistogram[i] );
+			printf( "\n" );
+			printf("%d\n", sum);
+		}
+	}
+#endif
 	int histogram[N_BINS_PER_WI] = { 0 };
 	int keys[SORT_N_ITEMS_PER_WI] = { 0 };
 
@@ -546,7 +446,7 @@ extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, i
 		}
 
 		//local sort keys[];
-		localSort8bitMulti( keys, ldsKeys, ldsTemp, ldsTemp1, START_BIT );
+		localSort8bitMulti( keys, ldsKeys, START_BIT );
 #if 0
 		if( THE_FIRST_THREAD )
 		{
@@ -569,7 +469,7 @@ extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, i
 		{
 			histogram[i] = ldsHistogram[threadIdx.x * N_BINS_PER_WI + i];
 		}
-
+#if 0
 		if( threadIdx.x == 0 ) // todo. parallel scan
 		{
 			int sum = 0;
@@ -580,6 +480,16 @@ extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, i
 				sum += t;
 			}
 		}
+#else
+		int sum = 0;
+		for( int i = 0; i < BIN_SIZE; i+=WG_SIZE)
+		{
+			int* dst = ldsHistogram + i;
+			int t = ldsScanExclusive( dst, WG_SIZE );
+			dst[threadIdx.x] += sum;
+			sum += t;
+		}
+#endif
 		LDS_BARRIER;
 		for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
 		{
