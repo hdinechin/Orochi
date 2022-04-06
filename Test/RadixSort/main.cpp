@@ -27,23 +27,29 @@
 #include <Test/ParallelPrimitives/RadixSort.h>
 #include <Test/ParallelPrimitives/RadixSortConfigs.h>
 #include <algorithm>
+#include <chrono>
+#include <optional>
+#include <random>
 #include <vector>
 
 class SortTest
 {
   public:
-	SortTest( oroDevice dev, oroCtx ctx ) : m_device( dev ), m_ctx( ctx ) { m_sort = new Oro::RadixSort(); }
+	SortTest( oroDevice dev, oroCtx ctx ) : m_device( dev ), m_ctx( ctx ), m_sort{ std::make_optional<Oro::RadixSort>() } {}
 
 	void test( int testSize )
 	{
-		using namespace std;
-		srand( 123 );
-		vector<int> src( testSize );
-		int historgram[BIN_SIZE] = { 0 };
+		std::vector<int> src( testSize );
+		std::vector<int> historgram( BIN_SIZE, 0 );
+
+		const auto seed{ std::chrono::system_clock::now().time_since_epoch().count() };
+		std::default_random_engine generator( seed );
+		std::uniform_int_distribution<int> distribution( 0, ( 1 << N_RADIX ) - 1 );
+
+		// generate random integers within the given range
 		for( int i = 0; i < testSize; i++ )
 		{
-			src[i] = getRandom( 0, ( 1 << N_RADIX ) - 1 );
-//			src[i] = getRandom( 0, ( 1 << 4 ) - 1 );
+			src[i] = distribution( generator );
 			historgram[src[i]]++;
 		}
 
@@ -55,67 +61,60 @@ class SortTest
 
 		m_sort->sort( srcGpu, dstGpu, testSize, 0, 8 );
 
-		vector<int> dst( testSize );
+		std::vector<int> dst( testSize );
 		OrochiUtils::copyDtoH( dst.data(), dstGpu, testSize );
+		OrochiUtils::waitForCompletion();
 
 		std::sort( src.begin(), src.end() );
-		for( int i = 0; i < testSize; i++ )
+
+		if( !std::equal( cbegin( src ), cend( src ), cbegin( dst ) ) )
 		{
-			if( dst[i] != src[i] ) 
-			{
-				printf( "fail\n" );
-				__debugbreak();
-			}
+			printf( "Test failed\n" );
 		}
-
-		int a = 0;
-	}
-
-	template<typename T>
-	inline T getRandom( const T minV, const T maxV )
-	{
-		double r = std::min( (double)RAND_MAX - 1, (double)rand() ) / RAND_MAX;
-		T range = maxV - minV;
-		return ( T )( minV + r * range );
+		else
+		{
+			printf( "Test passed\n" );
+		}
 	}
 
   private:
 	oroDevice m_device;
 	oroCtx m_ctx;
-	Oro::RadixSort* m_sort;
+	std::optional<Oro::RadixSort> m_sort;
 };
 
-int main(int argc, char** argv )
+int main( int argc, char** argv )
 {
 	oroApi api = getApiType( argc, argv );
 
-	int a = oroInitialize( api, 0 );
-	if( a != 0 )
+	if( int a = oroInitialize( api, 0 ); a != 0 )
 	{
-		printf("initialization failed\n");
-		return 0;
+		printf( "initialization failed\n" );
+		return EXIT_FAILURE;
 	}
-	printf( ">> executing on %s\n", ( api == ORO_API_HIP )? "hip":"cuda" );
+	printf( ">> executing on %s\n", ( api == ORO_API_HIP ) ? "hip" : "cuda" );
 
-	printf(">> testing initialization\n");
+	printf( ">> testing initialization\n" );
 	oroError e;
 	e = oroInit( 0 );
 	oroDevice device;
 	e = oroDeviceGet( &device, 0 );
 	oroCtx ctx;
 	e = oroCtxCreate( &ctx, 0, device );
+	OROASSERT( e == oroSuccess, 0 );
 
-
-	printf(">> testing device props\n");
+	printf( ">> testing device props\n" );
 	{
 		oroDeviceProp props;
 		oroGetDeviceProperties( &props, device );
-		printf("executing on %s (%s)\n", props.name, props.gcnArchName );
+		printf( "executing on %s (%s)\n", props.name, props.gcnArchName );
 	}
 
 	SortTest sort( device, ctx );
-	sort.test( 64 * 10 );
 
-	printf(">> done\n");
-	return 0;
+	constexpr auto testSize{ 64 * 10 };
+	sort.test( testSize );
+
+	printf( ">> done\n" );
+	return EXIT_SUCCESS;
 }
