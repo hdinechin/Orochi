@@ -69,11 +69,17 @@ class SortTest
 
 		if( !std::equal( cbegin( src ), cend( src ), cbegin( dst ) ) )
 		{
-			printf( "Test failed\n" );
+			printf( "Test failed ..\n" );
+			printf( "output number: \n" );
+			for( const auto& number : dst )
+			{
+				printf( "%d, ", number );
+			}
+			printf( "\n" );
 		}
 		else
 		{
-			printf( "Test passed\n" );
+			printf( "Test passed !\n" );
 		}
 	}
 

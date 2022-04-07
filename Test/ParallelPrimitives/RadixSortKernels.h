@@ -387,8 +387,12 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 
 __device__ void localSort8bitMulti( int* keys, u32* ldsKeys, const int START_BIT )
 {
-	localSort4bitMulti( keys, ldsKeys, START_BIT );
-	if( N_RADIX > 4 ) localSort4bitMulti( keys, ldsKeys, START_BIT + 4 );
+
+	localSort4bitMulti( keys, ldsKeys, START_BIT );	
+	if( N_RADIX > 4 ) 
+	{
+		localSort4bitMulti( keys, ldsKeys, START_BIT + 4 );
+	}
 }
 
 extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
@@ -484,7 +488,7 @@ extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, i
 		int sum = 0;
 		for( int i = 0; i < BIN_SIZE; i+=WG_SIZE)
 		{
-			int* dst = ldsHistogram + i;
+			int* dst = &ldsHistogram[i];
 			int t = ldsScanExclusive( dst, WG_SIZE );
 			dst[threadIdx.x] += sum;
 			sum += t;
@@ -511,4 +515,77 @@ extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, i
 		//===
 		offset += WG_SIZE * SORT_N_ITEMS_PER_WI;
 	}
+}
+
+
+extern "C"
+__global__ void ParallelExclusiveScan(int* gCount, int* gHistogram) 
+{
+	// local thread buffer for the local counter and the local exclusive scan.
+	int threadBuffer[NUM_COUNTS_PER_BIN];
+
+	// LDS for the parallel scan of the global sum: 
+	// First we store the sum of the counters of each number to it, 
+	// then we compute the global offset using parallel exclusive scan.
+	__shared__ int blockBuffer[BIN_SIZE];
+
+	// fill the LDS with the local sum
+
+	for(int binId = threadIdx.x; binId < BIN_SIZE; binId += WG_SIZE)
+	{
+		// load the counters of each number to the local thread buffer .
+
+		for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+		{
+			threadBuffer[i] = gCount[binId * NUM_COUNTS_PER_BIN + i];
+		}
+
+		// Do exclusive scan on each thread local buffer
+
+		int localThreadSum = 0;
+		for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+		{
+			int current = threadBuffer[i];
+			threadBuffer[i] = localThreadSum;
+
+			localThreadSum += current;
+		}
+		
+		// Store the thread local sum to LDS.
+
+		blockBuffer[binId] = localThreadSum;
+
+		// Write the local scan to the global histogram first.
+
+		for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+		{
+			gHistogram[binId * NUM_COUNTS_PER_BIN + i] = threadBuffer[i];
+		}
+	}
+
+	LDS_BARRIER;
+
+	// Do parallel exclusive scan on the LDS
+
+	int globalSum = 0;
+	for( int binID = 0; binID < BIN_SIZE; binID += WG_SIZE)
+	{
+		int* globalOffset = &blockBuffer[binID];
+		int currentGlobalSum = ldsScanExclusive( globalOffset, WG_SIZE );
+		globalOffset[threadIdx.x] += globalSum;
+		globalSum += currentGlobalSum;
+	}
+
+	LDS_BARRIER;
+
+	// Add the global offset to the global histogram.
+
+	for(int binId = threadIdx.x; binId < BIN_SIZE; binId += WG_SIZE)
+	{
+		for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+		{
+			gHistogram[binId * NUM_COUNTS_PER_BIN + i] += blockBuffer[binId];
+		}
+	}
+
 }

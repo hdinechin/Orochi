@@ -1,6 +1,8 @@
 #include <Test/OrochiUtils.h>
 #include <Test/ParallelPrimitives/RadixSort.h>
 #include <Test/ParallelPrimitives/RadixSortConfigs.h>
+#include <cassert>
+#include <chrono>
 #include <numeric>
 
 namespace
@@ -48,7 +50,7 @@ struct RadixSortImpl
 		oroFuncGetAttribute( &a, ORO_FUNC_ATTRIBUTE_NUM_REGS, func );
 		oroFuncGetAttribute( &b, ORO_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, func );
 		oroFuncGetAttribute( &c, ORO_FUNC_ATTRIBUTE_CONST_SIZE_BYTES, func );
-		printf( "vgpr : shared = %d : %d : %d\n", a, b, c );
+		printf( "vgpr : shared : const = %d : %d : %d\n", a, b, c );
 	}
 };
 
@@ -76,6 +78,8 @@ void RadixSort::sort( int* src, int* dst, int n, int startBit, int endBit )
 
 	constexpr auto kernalPath{ "../Test/ParallelPrimitives/RadixSortKernels.h" };
 
+	assert( NUM_COUNTS_PER_BIN == m_nWGsToExecute );
+
 	{
 		// Count
 		constexpr auto funcName{ reference ? "CountKernelReference" : "CountKernel" };
@@ -87,10 +91,33 @@ void RadixSort::sort( int* src, int* dst, int n, int startBit, int endBit )
 		OrochiUtils::waitForCompletion();
 	}
 
+	constexpr auto enableGPUParallelScan = true;
+
+	decltype( std::chrono::high_resolution_clock::now() ) t1;
+
+	if constexpr( enableGPUParallelScan )
 	{
-		// Exclusive scan
+		// Parallel Exclusive Scan using GPU.
+		constexpr auto funcName{ "ParallelExclusiveScan" };
+		oroFunction func = OrochiUtils::getFunctionFromFile( kernalPath, funcName, nullptr );
+		RadixSortImpl::printKernelInfo( func );
+		const void* args[] = { &temps, &temps, &m_nWGsToExecute };
+
+		t1 = std::chrono::high_resolution_clock::now();
+		OrochiUtils::launch1D( func, WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
+		OrochiUtils::waitForCompletion();
+	}
+	else
+	{
+		// Exclusive scan using CPU
+		t1 = std::chrono::high_resolution_clock::now();
 		exclusiveScanCpu( temps, temps, m_nWGsToExecute );
 	}
+
+	auto t2 = std::chrono::high_resolution_clock::now();
+	auto ms_int = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 );
+
+	printf( "Scan Execution time: %lld us \n", ms_int.count() );
 
 	{
 		// Sort
