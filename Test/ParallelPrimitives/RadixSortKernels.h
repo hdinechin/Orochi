@@ -521,6 +521,12 @@ extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, i
 extern "C"
 __global__ void ParallelExclusiveScan(int* gCount, int* gHistogram) 
 {
+	// Use a single WG.
+	if (blockIdx.x != 0) 
+	{
+		return;
+	}
+
 	// local thread buffer for the local counter and the local exclusive scan.
 	int threadBuffer[NUM_COUNTS_PER_BIN];
 
@@ -588,4 +594,81 @@ __global__ void ParallelExclusiveScan(int* gCount, int* gHistogram)
 		}
 	}
 
+}
+
+
+extern "C"
+__global__ void ParallelExclusiveScanAdv(int* gCount, int* gHistogram, int* gPartialSum)
+{
+	// local thread buffer for the local counter and the local exclusive scan.
+	int threadBuffer[NUM_COUNTS_PER_BIN];
+
+	for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+	{
+		threadBuffer[i] = gCount[(blockIdx.x * blockDim.x + threadIdx.x) * NUM_COUNTS_PER_BIN + i];
+	}
+
+	// Do exclusive scan on each thread local buffer
+
+	int localThreadSum = 0;
+	for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+	{
+		int current = threadBuffer[i];
+		threadBuffer[i] = localThreadSum;
+
+		localThreadSum += current;
+	}
+
+	// Fill the LDS
+	__shared__ int blockBuffer[BIN_SIZE];
+
+	for(int binId = threadIdx.x; binId < BIN_SIZE; binId += WG_SIZE)
+	{
+		blockBuffer[binId] = gCount[binId * NUM_COUNTS_PER_BIN + blockIdx.x ];
+	}
+
+	LDS_BARRIER;
+
+	// Do parallel exclusive scan on the LDS
+
+	int globalSum = 0;
+	for( int binID = 0; binID < BIN_SIZE; binID += WG_SIZE)
+	{
+		int* globalOffset = &blockBuffer[binID];
+		int currentGlobalSum = ldsScanExclusive( globalOffset, WG_SIZE );
+		globalOffset[threadIdx.x] += globalSum;
+		globalSum += currentGlobalSum;
+	}
+
+	LDS_BARRIER;
+
+	// Wite back the partial sum. Each WG has its own.
+
+	for(int binId = threadIdx.x; binId < BIN_SIZE; binId += WG_SIZE)
+	{
+		gPartialSum[binId * NUM_COUNTS_PER_BIN + blockIdx.x] = blockBuffer[binId];		
+	}
+
+	// Write back segmented scan
+
+	for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+	{
+		gHistogram[(blockIdx.x * blockDim.x + threadIdx.x) * NUM_COUNTS_PER_BIN + i] = threadBuffer[i];
+	}
+}
+
+
+extern "C"
+__global__ void ApplyGlobalOffset(int* gHistogram, int* gPartialSum)
+{
+	int sum = 0;
+	for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+	{
+		sum += gPartialSum[(blockIdx.x * blockDim.x + threadIdx.x) * NUM_COUNTS_PER_BIN + i];
+	}
+
+	for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+	{
+		gHistogram[(blockIdx.x * blockDim.x + threadIdx.x) * NUM_COUNTS_PER_BIN + i] += sum;
+	}
 }

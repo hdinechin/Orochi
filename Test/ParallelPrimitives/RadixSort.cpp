@@ -37,6 +37,19 @@ void exclusiveScanCpu( int* countsGpu, int* offsetsGpu, const int nWGsToExecute 
 	OrochiUtils::waitForCompletion();
 }
 
+template<class Func>
+inline void measureTime( Func&& callable ) noexcept
+{
+	const auto t1 = std::chrono::high_resolution_clock::now();
+
+	std::invoke( std::forward<Func>( callable ) );
+
+	const auto t2 = std::chrono::high_resolution_clock::now();
+	const auto ms_int = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 );
+
+	printf( "Scan Execution time: %lld us \n", ms_int.count() );
+}
+
 } // namespace
 
 namespace Oro
@@ -71,6 +84,10 @@ void RadixSort::sort( int* src, int* dst, int n, int startBit, int endBit )
 	OrochiUtils::malloc( temps, BIN_SIZE * m_nWGsToExecute );
 	OrochiUtils::memset( temps, 0, BIN_SIZE * m_nWGsToExecute * sizeof( int ) );
 
+	int* partialSum = nullptr;
+	OrochiUtils::malloc( partialSum, BIN_SIZE * m_nWGsToExecute );
+	OrochiUtils::memset( partialSum, 0, BIN_SIZE * m_nWGsToExecute * sizeof( int ) );
+
 	const int nWIs = WG_SIZE * m_nWGsToExecute;
 	int nItemsPerWI = ( n + ( nWIs - 1 ) ) / nWIs;
 	printf( "nWGs: %d\n", m_nWGsToExecute );
@@ -93,31 +110,63 @@ void RadixSort::sort( int* src, int* dst, int n, int startBit, int endBit )
 
 	constexpr auto enableGPUParallelScan = true;
 
-	decltype( std::chrono::high_resolution_clock::now() ) t1;
-
 	if constexpr( enableGPUParallelScan )
 	{
-		// Parallel Exclusive Scan using GPU.
-		constexpr auto funcName{ "ParallelExclusiveScan" };
-		oroFunction func = OrochiUtils::getFunctionFromFile( kernalPath, funcName, nullptr );
-		RadixSortImpl::printKernelInfo( func );
-		const void* args[] = { &temps, &temps, &m_nWGsToExecute };
 
-		t1 = std::chrono::high_resolution_clock::now();
-		OrochiUtils::launch1D( func, WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
-		OrochiUtils::waitForCompletion();
+		const auto useSingleWG = false;
+
+		if( useSingleWG )
+		{
+			// Parallel Exclusive Scan using GPU with single WG.
+			constexpr auto funcNameScan{ "ParallelExclusiveScan" };
+			oroFunction func = OrochiUtils::getFunctionFromFile( kernalPath, funcNameScan, nullptr );
+			RadixSortImpl::printKernelInfo( func );
+
+			measureTime(
+				[&]()
+				{
+					const void* args[] = { &temps, &temps };
+					OrochiUtils::launch1D( func, WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
+					OrochiUtils::waitForCompletion();
+				} );
+		}
+		else
+		{
+
+			// Parallel Exclusive Scan using GPU.
+			constexpr auto funcNameScan{ "ParallelExclusiveScanAdv" };
+			oroFunction funcScan = OrochiUtils::getFunctionFromFile( kernalPath, funcNameScan, nullptr );
+			RadixSortImpl::printKernelInfo( funcScan );
+
+			constexpr auto funcNameOffset{ "ApplyGlobalOffset" };
+			oroFunction funcOffset = OrochiUtils::getFunctionFromFile( kernalPath, funcNameOffset, nullptr );
+			RadixSortImpl::printKernelInfo( funcOffset );
+
+			measureTime(
+				[&]()
+				{
+					{
+
+						const void* args[] = { &temps, &temps, &partialSum };
+						OrochiUtils::launch1D( funcScan, WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
+					}
+
+					{
+
+						const void* args[] = { &temps, &partialSum };
+						OrochiUtils::launch1D( funcOffset, WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
+					}
+
+					OrochiUtils::waitForCompletion();
+				} );
+		}
 	}
 	else
 	{
 		// Exclusive scan using CPU
-		t1 = std::chrono::high_resolution_clock::now();
-		exclusiveScanCpu( temps, temps, m_nWGsToExecute );
+
+		measureTime( [&]() { exclusiveScanCpu( temps, temps, m_nWGsToExecute ); } );
 	}
-
-	auto t2 = std::chrono::high_resolution_clock::now();
-	auto ms_int = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 );
-
-	printf( "Scan Execution time: %lld us \n", ms_int.count() );
 
 	{
 		// Sort
