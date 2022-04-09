@@ -518,55 +518,38 @@ extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, i
 }
 
 
-extern "C"
-__global__ void ParallelExclusiveScan(int* gCount, int* gHistogram) 
+extern "C" __global__ void ParallelExclusiveScan( int* gCount, int* gHistogram, const int N_WGS_EXECUTED )
 {
 	// Use a single WG.
-	if (blockIdx.x != 0) 
+	if( blockIdx.x != 0 )
 	{
 		return;
 	}
 
-	// local thread buffer for the local counter and the local exclusive scan.
-	int threadBuffer[NUM_COUNTS_PER_BIN];
-
-	// LDS for the parallel scan of the global sum: 
-	// First we store the sum of the counters of each number to it, 
+	// LDS for the parallel scan of the global sum:
+	// First we store the sum of the counters of each number to it,
 	// then we compute the global offset using parallel exclusive scan.
 	__shared__ int blockBuffer[BIN_SIZE];
 
 	// fill the LDS with the local sum
 
-	for(int binId = threadIdx.x; binId < BIN_SIZE; binId += WG_SIZE)
+	for( int binId = threadIdx.x; binId < BIN_SIZE; binId += WG_SIZE )
 	{
-		// load the counters of each number to the local thread buffer .
-
-		for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
-		{
-			threadBuffer[i] = gCount[binId * NUM_COUNTS_PER_BIN + i];
-		}
-
-		// Do exclusive scan on each thread local buffer
+		// Do exclusive scan for each segment handled by each WI in a WG
 
 		int localThreadSum = 0;
-		for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+		for( int i = 0; i < N_WGS_EXECUTED; ++i )
 		{
-			int current = threadBuffer[i];
-			threadBuffer[i] = localThreadSum;
+			// int current = threadBuffer[i];
+			int current = gCount[binId * N_WGS_EXECUTED + i];
+			gCount[binId * N_WGS_EXECUTED + i] = localThreadSum;
 
 			localThreadSum += current;
 		}
-		
+
 		// Store the thread local sum to LDS.
 
 		blockBuffer[binId] = localThreadSum;
-
-		// Write the local scan to the global histogram first.
-
-		for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
-		{
-			gHistogram[binId * NUM_COUNTS_PER_BIN + i] = threadBuffer[i];
-		}
 	}
 
 	LDS_BARRIER;
@@ -574,9 +557,9 @@ __global__ void ParallelExclusiveScan(int* gCount, int* gHistogram)
 	// Do parallel exclusive scan on the LDS
 
 	int globalSum = 0;
-	for( int binID = 0; binID < BIN_SIZE; binID += WG_SIZE)
+	for( int binId = 0; binId < BIN_SIZE; binId += WG_SIZE )
 	{
-		int* globalOffset = &blockBuffer[binID];
+		int* globalOffset = &blockBuffer[binId];
 		int currentGlobalSum = ldsScanExclusive( globalOffset, WG_SIZE );
 		globalOffset[threadIdx.x] += globalSum;
 		globalSum += currentGlobalSum;
@@ -586,89 +569,62 @@ __global__ void ParallelExclusiveScan(int* gCount, int* gHistogram)
 
 	// Add the global offset to the global histogram.
 
-	for(int binId = threadIdx.x; binId < BIN_SIZE; binId += WG_SIZE)
+	for( int binId = threadIdx.x; binId < BIN_SIZE; binId += WG_SIZE )
 	{
-		for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+		for( int i = 0; i < N_WGS_EXECUTED; ++i )
 		{
-			gHistogram[binId * NUM_COUNTS_PER_BIN + i] += blockBuffer[binId];
+			gHistogram[binId * N_WGS_EXECUTED + i] += blockBuffer[binId];
 		}
 	}
-
 }
 
-
-extern "C"
-__global__ void ParallelExclusiveScanAdv(int* gCount, int* gHistogram, int* gPartialSum)
+extern "C" __global__ void ParallelExclusiveScanAdv( int* gCount, int* gHistogram, int* gPartialSum )
 {
-	// local thread buffer for the local counter and the local exclusive scan.
-	int threadBuffer[NUM_COUNTS_PER_BIN];
-
-	for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
-	{
-		threadBuffer[i] = gCount[(blockIdx.x * blockDim.x + threadIdx.x) * NUM_COUNTS_PER_BIN + i];
-	}
-
-	// Do exclusive scan on each thread local buffer
+	// Do exclusive scan for each segment handled by each WI in all WGs
 
 	int localThreadSum = 0;
-	for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+	for( int i = 0; i < NUM_COUNTS_PER_WI; ++i )
 	{
-		int current = threadBuffer[i];
-		threadBuffer[i] = localThreadSum;
+		int* localOffset = &gCount[( blockIdx.x * blockDim.x + threadIdx.x ) * NUM_COUNTS_PER_WI + i];
+		int current = *localOffset;
+		*localOffset = localThreadSum;
 
 		localThreadSum += current;
 	}
 
-	// Fill the LDS
-	__shared__ int blockBuffer[BIN_SIZE];
+	// Fill the LDS with the partial sum of each segment
+	__shared__ int blockBuffer[WG_SIZE];
 
-	for(int binId = threadIdx.x; binId < BIN_SIZE; binId += WG_SIZE)
-	{
-		blockBuffer[binId] = gCount[binId * NUM_COUNTS_PER_BIN + blockIdx.x ];
-	}
+	blockBuffer[threadIdx.x] = localThreadSum;
 
 	LDS_BARRIER;
 
 	// Do parallel exclusive scan on the LDS
 
-	int globalSum = 0;
-	for( int binID = 0; binID < BIN_SIZE; binID += WG_SIZE)
-	{
-		int* globalOffset = &blockBuffer[binID];
-		int currentGlobalSum = ldsScanExclusive( globalOffset, WG_SIZE );
-		globalOffset[threadIdx.x] += globalSum;
-		globalSum += currentGlobalSum;
-	}
+	int currentSegmentSum = ldsScanExclusive( blockBuffer, WG_SIZE );
 
 	LDS_BARRIER;
 
 	// Wite back the partial sum. Each WG has its own.
 
-	for(int binId = threadIdx.x; binId < BIN_SIZE; binId += WG_SIZE)
-	{
-		gPartialSum[binId * NUM_COUNTS_PER_BIN + blockIdx.x] = blockBuffer[binId];		
-	}
+	gPartialSum[blockIdx.x] = currentSegmentSum;
 
-	// Write back segmented scan
+	// Write back the result of the segmented scan
 
-	for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+	for( int i = 0; i < NUM_COUNTS_PER_WI; ++i )
 	{
-		gHistogram[(blockIdx.x * blockDim.x + threadIdx.x) * NUM_COUNTS_PER_BIN + i] = threadBuffer[i];
+		int currentIndex = ( blockIdx.x * blockDim.x + threadIdx.x ) * NUM_COUNTS_PER_WI + i;
+		gHistogram[currentIndex] = gCount[currentIndex] + blockBuffer[threadIdx.x];
 	}
 }
 
-
-extern "C"
-__global__ void ApplyGlobalOffset(int* gHistogram, int* gPartialSum)
+extern "C" __global__ void ApplyGlobalOffset( int* gHistogram, int* gPartialSum )
 {
-	int sum = 0;
-	for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
+	for( int i = 0; i < NUM_COUNTS_PER_WI; ++i )
 	{
-		sum += gPartialSum[(blockIdx.x * blockDim.x + threadIdx.x) * NUM_COUNTS_PER_BIN + i];
-	}
-
-	for (int i = 0; i < NUM_COUNTS_PER_BIN; ++i) 
-	{
-		gHistogram[(blockIdx.x * blockDim.x + threadIdx.x) * NUM_COUNTS_PER_BIN + i] += sum;
+		for( int block = 1; block <= blockIdx.x; ++block )
+		{
+			gHistogram[( blockIdx.x * blockDim.x + threadIdx.x ) * NUM_COUNTS_PER_WI + i] += gPartialSum[block - 1];
+		}
 	}
 }

@@ -15,25 +15,28 @@ namespace
 /// @param nWGsToExecute Number of WGs to execute
 void exclusiveScanCpu( int* countsGpu, int* offsetsGpu, const int nWGsToExecute ) noexcept
 {
-	std::vector<int> counts( BIN_SIZE * nWGsToExecute );
-	OrochiUtils::copyDtoH( counts.data(), countsGpu, BIN_SIZE * nWGsToExecute );
+	std::vector<int> counts( Oro::BIN_SIZE * nWGsToExecute );
+	OrochiUtils::copyDtoH( counts.data(), countsGpu, Oro::BIN_SIZE * nWGsToExecute );
 	OrochiUtils::waitForCompletion();
 
-#if 0
-	for( int j = 0; j < nWGsToExecute; j++ )
-	{
-		for( int i = 0; i < BIN_SIZE; i++ )
-		{
-			printf( "%d, ", counts[j * BIN_SIZE + i] );
-		}
-		printf( "\n" );
-	}
-#endif
+	constexpr auto ENABLE_PRINT{ false };
 
-	std::vector<int> offsets( BIN_SIZE * nWGsToExecute );
+	if constexpr( ENABLE_PRINT )
+	{
+		for( int j = 0; j < nWGsToExecute; j++ )
+		{
+			for( int i = 0; i < Oro::BIN_SIZE; i++ )
+			{
+				printf( "%d, ", counts[j * Oro::BIN_SIZE + i] );
+			}
+			printf( "\n" );
+		}
+	}
+
+	std::vector<int> offsets( Oro::BIN_SIZE * nWGsToExecute );
 	std::exclusive_scan( std::cbegin( counts ), std::cend( counts ), std::begin( offsets ), 0 );
 
-	OrochiUtils::copyHtoD( offsetsGpu, offsets.data(), BIN_SIZE * nWGsToExecute );
+	OrochiUtils::copyHtoD( offsetsGpu, offsets.data(), Oro::BIN_SIZE * nWGsToExecute );
 	OrochiUtils::waitForCompletion();
 }
 
@@ -80,13 +83,13 @@ void RadixSort::sort( int* src, int* dst, int n, int startBit, int endBit )
 	// count kernel
 	// scan
 	// sort
-	int* temps;
+	int* temps = nullptr;
 	OrochiUtils::malloc( temps, BIN_SIZE * m_nWGsToExecute );
 	OrochiUtils::memset( temps, 0, BIN_SIZE * m_nWGsToExecute * sizeof( int ) );
 
 	int* partialSum = nullptr;
-	OrochiUtils::malloc( partialSum, BIN_SIZE * m_nWGsToExecute );
-	OrochiUtils::memset( partialSum, 0, BIN_SIZE * m_nWGsToExecute * sizeof( int ) );
+	OrochiUtils::malloc( partialSum, m_nWGsToExecute );
+	OrochiUtils::memset( partialSum, 0, m_nWGsToExecute * sizeof( int ) );
 
 	const int nWIs = WG_SIZE * m_nWGsToExecute;
 	int nItemsPerWI = ( n + ( nWIs - 1 ) ) / nWIs;
@@ -94,8 +97,6 @@ void RadixSort::sort( int* src, int* dst, int n, int startBit, int endBit )
 	printf( "nNItemsPerWI: %d\n", nItemsPerWI );
 
 	constexpr auto kernalPath{ "../Test/ParallelPrimitives/RadixSortKernels.h" };
-
-	assert( NUM_COUNTS_PER_BIN == m_nWGsToExecute );
 
 	{
 		// Count
@@ -125,14 +126,13 @@ void RadixSort::sort( int* src, int* dst, int n, int startBit, int endBit )
 			measureTime(
 				[&]()
 				{
-					const void* args[] = { &temps, &temps };
+					const void* args[] = { &temps, &temps, &m_nWGsToExecute };
 					OrochiUtils::launch1D( func, WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
 					OrochiUtils::waitForCompletion();
 				} );
 		}
 		else
 		{
-
 			// Parallel Exclusive Scan using GPU.
 			constexpr auto funcNameScan{ "ParallelExclusiveScanAdv" };
 			oroFunction funcScan = OrochiUtils::getFunctionFromFile( kernalPath, funcNameScan, nullptr );

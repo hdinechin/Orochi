@@ -40,11 +40,11 @@ class SortTest
 	void test( int testSize )
 	{
 		std::vector<int> src( testSize );
-		std::vector<int> historgram( BIN_SIZE, 0 );
+		std::vector<int> historgram( Oro::BIN_SIZE, 0 );
 
 		const auto seed{ std::chrono::system_clock::now().time_since_epoch().count() };
 		std::default_random_engine generator( seed );
-		std::uniform_int_distribution<int> distribution( 0, ( 1 << N_RADIX ) - 1 );
+		std::uniform_int_distribution<int> distribution( 0, ( 1 << Oro::N_RADIX ) - 1 );
 
 		// generate random integers within the given range
 		for( int i = 0; i < testSize; i++ )
@@ -118,7 +118,7 @@ int main( int argc, char** argv )
 
 	SortTest sort( device, ctx );
 
-	constexpr auto testSize{ 64 * 10 };
+	constexpr auto testSize{ 64 * 1000 };
 	sort.test( testSize );
 
 	printf( ">> done\n" );

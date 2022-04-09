@@ -6,15 +6,13 @@ namespace Oro
 class RadixSort
 {
   public:
-	  RadixSort();
+	RadixSort();
+	~RadixSort();
 
-	  ~RadixSort();
-
-	  void sort( int* src, int* dst, int n, int startBit, int endBit );
+	void sort( int* src, int* dst, int n, int startBit, int endBit );
 
   private:
-	  int m_nWGsToExecute;
-
+	int m_nWGsToExecute;
 };
 
-};
+}; // namespace Oro
