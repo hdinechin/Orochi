@@ -40,29 +40,27 @@ RadixSort::~RadixSort()
 { 
 }
 
-void RadixSort::configure( oroDevice device )
+void RadixSort::configure( oroDevice device, u32& tempBufferSizeOut )
 {
 	oroDeviceProp props;
 	oroGetDeviceProperties( &props, device );
 	const int occupancy = 4;//todo. change me
 	m_nWGsToExecute = props.multiProcessorCount * occupancy;
+
+	tempBufferSizeOut = BIN_SIZE * m_nWGsToExecute;
 }
 void RadixSort::setFlag( Flag flag ) 
 {
 	m_flags = flag;
 }
 
-void RadixSort::sort( u32* src, u32* dst, int n, int startBit, int endBit )
+void RadixSort::sort( u32* src, u32* dst, int n, int startBit, int endBit, u32* tempBuffer )
 {
-	int* temps;//todo. allocate outside
-	OrochiUtils::malloc( temps, BIN_SIZE * m_nWGsToExecute );
-	OrochiUtils::memset( temps, 0, BIN_SIZE * m_nWGsToExecute * sizeof( int ) );
-
 	u32* s = src;
 	u32* d = dst;
 	for( int i = startBit; i < endBit; i += N_RADIX )
 	{
-		sort1pass( s, d, n, i, i + std::min( N_RADIX, endBit - i ), temps );
+		sort1pass( s, d, n, i, i + std::min( N_RADIX, endBit - i ), (int*)tempBuffer );
 
 		I::swap( s, d );
 	}
@@ -71,8 +69,6 @@ void RadixSort::sort( u32* src, u32* dst, int n, int startBit, int endBit )
 	{
 		OrochiUtils::copyDtoD( dst, src, n );
 	}
-
-	OrochiUtils::free( temps );
 }
 
 void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, int* temps )

@@ -19,11 +19,11 @@ class RadixSort
 
 	  ~RadixSort();
 
-	  void configure( oroDevice device );
+	  void configure( oroDevice device, u32& tempBufferSizeOut );
 
 	  void setFlag( Flag flag );
 
-	  void sort( u32* src, u32* dst, int n, int startBit, int endBit );
+	  void sort( u32* src, u32* dst, int n, int startBit, int endBit, u32* tempBuffer );
 
   private:
 	  void sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, int* tmps );

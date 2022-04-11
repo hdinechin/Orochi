@@ -54,9 +54,17 @@ class SortTest
   public:
 	SortTest( oroDevice dev, oroCtx ctx ) : m_device( dev ), m_ctx( ctx ) 
 	{ 
-		m_sort = new Oro::RadixSort(); 
-		m_sort->configure( m_device );
+		m_sort = new Oro::RadixSort();
+		u32 s;
+		m_sort->configure( m_device, s );
 //		m_sort->setFlag( Oro::RadixSort::FLAG_LOG );
+		OrochiUtils::malloc( m_tempBuffer, s );
+	}
+
+	~SortTest() 
+	{
+		delete m_sort;
+		OrochiUtils::free( m_tempBuffer );
 	}
 
 	void test( int testSize, const int testBits = 32, const int nRuns = 1 )
@@ -80,7 +88,7 @@ class SortTest
 			OrochiUtils::copyHtoD( srcGpu, src.data(), testSize );
 			OrochiUtils::waitForCompletion();
 			sw.start();
-			m_sort->sort( srcGpu, dstGpu, testSize, 0, testBits );
+			m_sort->sort( srcGpu, dstGpu, testSize, 0, testBits, m_tempBuffer );
 			OrochiUtils::waitForCompletion();
 			sw.stop();
 			printf("%3.2fms\n", sw.getMs());
@@ -117,6 +125,7 @@ class SortTest
 	oroDevice m_device;
 	oroCtx m_ctx;
 	Oro::RadixSort* m_sort;
+	u32* m_tempBuffer;
 };
 
 enum TestType
