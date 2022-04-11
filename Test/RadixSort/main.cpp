@@ -29,33 +29,64 @@
 #include <algorithm>
 #include <vector>
 
+#include <chrono>
+
+class Stopwatch
+{
+  public:
+	void start() { m_start = std::chrono::system_clock::now(); }
+	void stop() { m_end = std::chrono::system_clock::now(); }
+	float getMs() 
+	{
+		return  std::chrono::duration_cast<std::chrono::milliseconds>( m_end - m_start ).count();
+	}
+
+	private:
+	  std::chrono::time_point<std::chrono::system_clock> m_start, m_end;
+
+};
+
+#define u64 unsigned long long
+#define u32 unsigned int
+
 class SortTest
 {
   public:
-	SortTest( oroDevice dev, oroCtx ctx ) : m_device( dev ), m_ctx( ctx ) { m_sort = new Oro::RadixSort(); }
+	SortTest( oroDevice dev, oroCtx ctx ) : m_device( dev ), m_ctx( ctx ) 
+	{ 
+		m_sort = new Oro::RadixSort(); 
+		m_sort->configure( m_device );
+//		m_sort->setFlag( Oro::RadixSort::FLAG_LOG );
+	}
 
-	void test( int testSize )
+	void test( int testSize, const int testBits = 32, const int nRuns = 1 )
 	{
 		using namespace std;
 		srand( 123 );
-		vector<int> src( testSize );
-		int historgram[BIN_SIZE] = { 0 };
+		vector<u32> src( testSize );
 		for( int i = 0; i < testSize; i++ )
 		{
-			src[i] = getRandom( 0, ( 1 << N_RADIX ) - 1 );
-//			src[i] = getRandom( 0, ( 1 << 4 ) - 1 );
-			historgram[src[i]]++;
+			src[i] = getRandom( 0u, (u32)(( 1ull << (u64)testBits ) - 1) );
 		}
 
-		int* srcGpu;
-		int* dstGpu;
+		u32* srcGpu;
+		u32* dstGpu;
 		OrochiUtils::malloc( srcGpu, testSize );
 		OrochiUtils::malloc( dstGpu, testSize );
-		OrochiUtils::copyHtoD( srcGpu, src.data(), testSize );
 
-		m_sort->sort( srcGpu, dstGpu, testSize, 0, 8 );
+		Stopwatch sw;
+		for( int i = 0; i < nRuns ; i++)
+		{
+			OrochiUtils::copyHtoD( srcGpu, src.data(), testSize );
+			OrochiUtils::waitForCompletion();
+			sw.start();
+			m_sort->sort( srcGpu, dstGpu, testSize, 0, testBits );
+			OrochiUtils::waitForCompletion();
+			sw.stop();
+			printf("%3.2fms\n", sw.getMs());
+		}
 
-		vector<int> dst( testSize );
+		vector<u32> dst( testSize );
 		OrochiUtils::copyDtoH( dst.data(), dstGpu, testSize );
 
 		std::sort( src.begin(), src.end() );
@@ -65,10 +96,13 @@ class SortTest
 			{
 				printf( "fail\n" );
 				__debugbreak();
+				break;
 			}
 		}
 
-		int a = 0;
+		OrochiUtils::free( srcGpu );
+		OrochiUtils::free( dstGpu );
+		printf("passed: %3.2fK keys\n", testSize/1000.f);
 	}
 
 	template<typename T>
@@ -85,8 +119,16 @@ class SortTest
 	Oro::RadixSort* m_sort;
 };
 
+enum TestType
+{
+	TEST_SIMPLE,
+	TEST_PERF,
+	TEST_BITS,
+};
+
 int main(int argc, char** argv )
 {
+	TestType testType = TEST_BITS;
 	oroApi api = getApiType( argc, argv );
 
 	int a = oroInitialize( api, 0 );
@@ -110,11 +152,31 @@ int main(int argc, char** argv )
 	{
 		oroDeviceProp props;
 		oroGetDeviceProperties( &props, device );
-		printf("executing on %s (%s)\n", props.name, props.gcnArchName );
+		printf( "executing on %s (%s), %d SIMDs\n", props.name, props.gcnArchName, props.multiProcessorCount );
 	}
 
 	SortTest sort( device, ctx );
-	sort.test( 64 * 10 );
+	const int testBits = 16;
+	switch( testType )
+	{
+	case TEST_SIMPLE:
+		sort.test( 64 * 100, testBits );
+		break;
+	case TEST_PERF:
+		sort.test( 64 * 100 * 10, testBits );
+		sort.test( 64 * 100 * 100, testBits );
+		sort.test( 64 * 100 * 1000, testBits );
+		break;
+	case TEST_BITS:
+	{
+		int testSize = 64*1000;
+		sort.test( testSize, 8 );
+		sort.test( testSize, 16 );
+		sort.test( testSize, 24 );
+		sort.test( testSize, 32 );
+	}
+		break;
+	};
 
 	printf(">> done\n");
 	return 0;

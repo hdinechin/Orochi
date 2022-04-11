@@ -42,6 +42,13 @@ class OrochiUtils
 		OROASSERT( e == oroSuccess, 0 );
 	}
 
+	template<typename T>
+	static void copyDtoD( T* dst, T* src, int n )
+	{
+		oroError e = oroMemcpyDtoD( (oroDeviceptr)dst, (oroDeviceptr)src, sizeof( T ) * n );
+		OROASSERT( e == oroSuccess, 0 );
+	}
+
 	static
 	void waitForCompletion()
 	{
