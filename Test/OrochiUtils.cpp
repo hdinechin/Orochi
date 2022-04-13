@@ -102,6 +102,7 @@ oroFunction OrochiUtils::getFunction( const char* code, const char* path, const 
 	e = orortcCreateProgram( &prog, code, path, 0, 0, 0 );
 	std::vector<const char*> opts;
 	opts.push_back( "-I ../" );
+	opts.push_back( "-std=c++14" );
 
 //	if( oroGetCurAPI(0) == ORO_API_CUDA )
 //		opts.push_back( "-G" );
