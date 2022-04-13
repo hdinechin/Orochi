@@ -110,7 +110,7 @@ void RadixSort::configure( oroDevice device, u32& tempBufferSizeOut )
 {
 	oroDeviceProp props;
 	oroGetDeviceProperties( &props, device );
-	const int occupancy = 4; // todo. change me
+	const int occupancy = 4*4; // todo. change me
 	m_nWGsToExecute = props.multiProcessorCount * occupancy;
 
 	tempBufferSizeOut = BIN_SIZE * m_nWGsToExecute;

@@ -7,6 +7,8 @@ typedef unsigned short u16;
 typedef unsigned int u32;
 typedef unsigned long long u64;
 
+#define NV_WORKAROUND 1
+
 #define THE_FIRST_THREAD threadIdx.x == 0 && blockIdx.x == 0
 
 extern "C"
@@ -327,7 +329,7 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 
 	LDS_BARRIER;
 
-#if 0
+#if defined( NV_WORKAROUND )
 	if( threadIdx.x < N_BINS_PACKED_4BIT ) // 16 scans, pack 4 scans into 1 to make 4 parallel scans
 	{
 		u64 sum = 0;
@@ -469,7 +471,7 @@ extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, i
 		{
 			histogram[i] = ldsHistogram[threadIdx.x * N_BINS_PER_WI + i];
 		}
-#if 0
+#if defined( NV_WORKAROUND )
 		if( threadIdx.x == 0 ) // todo. parallel scan
 		{
 			int sum = 0;
