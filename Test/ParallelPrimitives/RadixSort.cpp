@@ -5,7 +5,6 @@
 
 namespace
 {
-
 /// @brief Exclusive scan algorithm on CPU for testing.
 /// It copies the count result from the Device to Host before computation, and then copies the offsets back from Host to Device afterward.
 /// @param countsGpu The count result in GPU memory. Otuput: The offset.
@@ -66,7 +65,6 @@ using I = RadixSortImpl;
 
 RadixSort::RadixSort()
 {
-	m_nWGsToExecute = 4;
 	m_flags = (Flag)0;
 
 	compileKernels();
@@ -74,7 +72,17 @@ RadixSort::RadixSort()
 	if( selectedScanAlgo == ScanAlgo::SCAN_GPU_PARALLEL )
 	{
 		OrochiUtils::malloc( m_partialSum, m_nWGsToExecute );
-		OrochiUtils::memset( m_partialSum, 0, m_nWGsToExecute * sizeof( int ) );
+		OrochiUtils::malloc( m_isReady, m_nWGsToExecute );
+		OrochiUtils::memset( m_isReady, false, m_nWGsToExecute * sizeof( bool ) );
+	}
+}
+
+RadixSort::~RadixSort()
+{
+	if( selectedScanAlgo == ScanAlgo::SCAN_GPU_PARALLEL )
+	{
+		OrochiUtils::free( m_partialSum );
+		OrochiUtils::free( m_isReady );
 	}
 }
 
@@ -96,9 +104,6 @@ void RadixSort::compileKernels()
 	oroFunctions[Kernel::SCAN_PARALLEL] = OrochiUtils::getFunctionFromFile( kernelPath, "ParallelExclusiveScanAllWG", 0 );
 	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::SCAN_PARALLEL] );
 
-	oroFunctions[Kernel::APPLY_OFFSET] = OrochiUtils::getFunctionFromFile( kernelPath, "ApplyGlobalOffset", 0 );
-	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::APPLY_OFFSET] );
-
 	oroFunctions[Kernel::SORT] = OrochiUtils::getFunctionFromFile( kernelPath, "SortKernel2", 0 );
 	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::SORT] );
 
@@ -110,9 +115,20 @@ void RadixSort::configure( oroDevice device, u32& tempBufferSizeOut )
 {
 	oroDeviceProp props;
 	oroGetDeviceProperties( &props, device );
-	const int occupancy = 4; // todo. change me
-	m_nWGsToExecute = props.multiProcessorCount * occupancy;
+	const int occupancy = 2; // todo. change me
 
+	const auto newWGsToExecute{ props.multiProcessorCount * occupancy };
+
+	if( newWGsToExecute != m_nWGsToExecute && selectedScanAlgo == ScanAlgo::SCAN_GPU_PARALLEL )
+	{
+		OrochiUtils::free( m_partialSum );
+		OrochiUtils::free( m_isReady );
+		OrochiUtils::malloc( m_partialSum, newWGsToExecute );
+		OrochiUtils::malloc( m_isReady, newWGsToExecute );
+		OrochiUtils::memset( m_isReady, false, newWGsToExecute * sizeof( bool ) );
+	}
+
+	m_nWGsToExecute = newWGsToExecute;
 	tempBufferSizeOut = BIN_SIZE * m_nWGsToExecute;
 }
 void RadixSort::setFlag( Flag flag ) { m_flags = flag; }
@@ -160,7 +176,6 @@ void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, 
 	}
 
 	{
-
 		switch( selectedScanAlgo )
 		{
 		case ScanAlgo::SCAN_CPU:
@@ -178,15 +193,8 @@ void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, 
 
 		case ScanAlgo::SCAN_GPU_PARALLEL:
 		{
-			{
-				const void* args[] = { &temps, &temps, &m_partialSum };
-				OrochiUtils::launch1D( oroFunctions[Kernel::SCAN_PARALLEL], WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
-			}
-
-			{
-				const void* args[] = { &temps, &m_partialSum };
-				OrochiUtils::launch1D( oroFunctions[Kernel::APPLY_OFFSET], WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
-			}
+			const void* args[] = { &temps, &temps, &m_partialSum, &m_isReady };
+			OrochiUtils::launch1D( oroFunctions[Kernel::SCAN_PARALLEL], WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
 		}
 		break;
 
