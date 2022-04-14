@@ -19,6 +19,13 @@ class RadixSort
 
 	RadixSort();
 
+	// Allow move but disallow copy.
+	RadixSort( RadixSort&& ) = default;
+	RadixSort& operator=( RadixSort&& ) = default;
+	RadixSort( const RadixSort& ) = delete;
+	RadixSort& operator=( const RadixSort& ) = delete;
+	~RadixSort();
+
 	void configure( oroDevice device, u32& tempBufferSizeOut );
 
 	void setFlag( Flag flag );
@@ -31,7 +38,7 @@ class RadixSort
 	void compileKernels();
 
   private:
-	int m_nWGsToExecute;
+	int m_nWGsToExecute{ 4 };
 	Flag m_flags;
 
 	enum class Kernel
@@ -40,7 +47,6 @@ class RadixSort
 		COUNT_REF,
 		SCAN_SINGLE_WG,
 		SCAN_PARALLEL,
-		APPLY_OFFSET,
 		SORT,
 		SORT_REF
 	};
@@ -58,6 +64,7 @@ class RadixSort
 	constexpr static auto selectedScanAlgo{ ScanAlgo::SCAN_GPU_PARALLEL };
 
 	int* m_partialSum{ nullptr };
+	bool* m_isReady{ nullptr };
 };
 
 }; // namespace Oro

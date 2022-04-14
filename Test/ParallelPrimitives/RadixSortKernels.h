@@ -573,7 +573,40 @@ extern "C" __global__ void ParallelExclusiveScanSingleWG( int* gCount, int* gHis
 	}
 }
 
-extern "C" __global__ void ParallelExclusiveScanAllWG( int* gCount, int* gHistogram, int* gPartialSum )
+extern "C" __device__ void WorkgroupSync( int threadId, int blockId, int currentSegmentSum, int* currentGlobalOffset, volatile int* gPartialSum, volatile bool* gIsReady )
+{
+	if( threadId == 0 )
+	{
+		int offset = 0;
+
+		if( blockId != 0 )
+		{
+			while( !gIsReady[blockId - 1] )
+			{
+			}
+
+			offset = gPartialSum[blockId - 1];
+
+			__threadfence();
+
+			// Reset the value
+			gIsReady[blockId - 1] = false;
+		}
+
+		gPartialSum[blockId] = offset + currentSegmentSum;
+
+		// Ensure that the gIsReady is only modified after the gPartialSum is written.
+		__threadfence();
+
+		gIsReady[blockId] = true;
+
+		*currentGlobalOffset = offset;
+	}
+
+	LDS_BARRIER;
+}
+
+extern "C" __global__ void ParallelExclusiveScanAllWG( int* gCount, int* gHistogram, volatile int* gPartialSum, volatile bool* gIsReady )
 {
 	// Fill the private memory per WI
 
@@ -607,26 +640,16 @@ extern "C" __global__ void ParallelExclusiveScanAllWG( int* gCount, int* gHistog
 
 	LDS_BARRIER;
 
-	// Wite back the partial sum. Each WG has its own.
+	// Sync all the Workgroups to calculate the global offset.
 
-	gPartialSum[blockIdx.x] = currentSegmentSum;
+	__shared__ int currentGlobalOffset;
+	WorkgroupSync( threadIdx.x, blockIdx.x, currentSegmentSum, &currentGlobalOffset, gPartialSum, gIsReady );
 
-	// Write back the result of the segmented scan
+	// Write back the result.
 
 	for( int i = 0; i < NUM_COUNTS_PER_WI; ++i )
 	{
 		const int currentIndex = ( blockIdx.x * blockDim.x + threadIdx.x ) * NUM_COUNTS_PER_WI + i;
-		gHistogram[currentIndex] = privateBuffer[i] + blockBuffer[threadIdx.x];
-	}
-}
-
-extern "C" __global__ void ApplyGlobalOffset( int* gHistogram, int* gPartialSum )
-{
-	for( int i = 0; i < NUM_COUNTS_PER_WI; ++i )
-	{
-		for( int block = 1; block <= blockIdx.x; ++block )
-		{
-			gHistogram[( blockIdx.x * blockDim.x + threadIdx.x ) * NUM_COUNTS_PER_WI + i] += gPartialSum[block - 1];
-		}
+		gHistogram[currentIndex] = privateBuffer[i] + blockBuffer[threadIdx.x] + currentGlobalOffset;
 	}
 }
