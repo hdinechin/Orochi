@@ -7,6 +7,8 @@ typedef unsigned short u16;
 typedef unsigned int u32;
 typedef unsigned long long u64;
 
+// #define NV_WORKAROUND 1
+
 #define THE_FIRST_THREAD threadIdx.x == 0 && blockIdx.x == 0
 
 extern "C"
@@ -222,26 +224,57 @@ __device__ T waveScanExclusive( T& a, int width )
 }
 
 template<typename T>
-__device__ void ldsScanInclusive( T* lds, int width ) 
+__device__ void ldsScanInclusive( T* lds, int width )
 {
+	// The width cannot exceed WG_SIZE
+	__shared__ T temp[2][WG_SIZE];
+
+	constexpr int MAX_INDEX = 1;
+	int outIndex = 0;
+	int inIndex = 1;
+
+	temp[outIndex][threadIdx.x] = lds[threadIdx.x];
+	LDS_BARRIER;
+
 	for( int i = 1; i < width; i *= 2 )
 	{
-		int src = threadIdx.x - i;
-		T a = ( src < 0 ) ? 0 : lds[src];
-		LDS_BARRIER;
-		if( threadIdx.x >= i ) lds[threadIdx.x] += a;
+		// Swap in and out index for the buffers
+
+		outIndex = MAX_INDEX - outIndex;
+		inIndex = MAX_INDEX - outIndex;
+
+		if( threadIdx.x >= i )
+		{
+			temp[outIndex][threadIdx.x] = temp[inIndex][threadIdx.x] + temp[inIndex][threadIdx.x - i];
+		}
+		else
+		{
+			temp[outIndex][threadIdx.x] = temp[inIndex][threadIdx.x];
+		}
+
 		LDS_BARRIER;
 	}
+
+	lds[threadIdx.x] = temp[outIndex][threadIdx.x];
+
+	// Ensure the results are written in LDS and are observable in a block (workgroup) before return.
+	__threadfence_block();
 }
 
 template<typename T>
 __device__ T ldsScanExclusive( T* lds, int width )
-{ 
+{
 	ldsScanInclusive( lds, width );
 
-	T sum = lds[width-1];
-	lds[threadIdx.x] = (threadIdx.x == 0 )? 0 : lds[threadIdx.x-1];
+	const T sum = lds[width - 1];
+
+	T tmp = 0;
+	tmp = ( threadIdx.x == 0 ) ? 0 : lds[threadIdx.x - 1];
 	LDS_BARRIER;
+
+	lds[threadIdx.x] = tmp;
+	LDS_BARRIER;
+
 	return sum;
 }
 
@@ -327,7 +360,7 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 
 	LDS_BARRIER;
 
-#if 0
+#if defined( NV_WORKAROUND )
 	if( threadIdx.x < N_BINS_PACKED_4BIT ) // 16 scans, pack 4 scans into 1 to make 4 parallel scans
 	{
 		u64 sum = 0;
@@ -469,7 +502,7 @@ extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, i
 		{
 			histogram[i] = ldsHistogram[threadIdx.x * N_BINS_PER_WI + i];
 		}
-#if 0
+#if defined( NV_WORKAROUND )
 		if( threadIdx.x == 0 ) // todo. parallel scan
 		{
 			int sum = 0;
