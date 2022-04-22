@@ -7,6 +7,8 @@ typedef unsigned short u16;
 typedef unsigned int u32;
 typedef unsigned long long u64;
 
+// #define NV_WORKAROUND 1
+
 #define THE_FIRST_THREAD threadIdx.x == 0 && blockIdx.x == 0
 
 extern "C"
@@ -222,29 +224,96 @@ __device__ T waveScanExclusive( T& a, int width )
 }
 
 template<typename T>
-__device__ void ldsScanInclusive( T* lds, int width ) 
+__device__ void ldsScanInclusive( T* lds, int width )
 {
+	// The width cannot exceed WG_SIZE
+	__shared__ T temp[2][WG_SIZE];
+
+	constexpr int MAX_INDEX = 1;
+	int outIndex = 0;
+	int inIndex = 1;
+
+	temp[outIndex][threadIdx.x] = lds[threadIdx.x];
+	LDS_BARRIER;
+
 	for( int i = 1; i < width; i *= 2 )
 	{
-		int src = threadIdx.x - i;
-		T a = ( src < 0 ) ? 0 : lds[src];
-		LDS_BARRIER;
-		if( threadIdx.x >= i ) lds[threadIdx.x] += a;
+		// Swap in and out index for the buffers
+
+		outIndex = MAX_INDEX - outIndex;
+		inIndex = MAX_INDEX - outIndex;
+
+		if( threadIdx.x >= i )
+		{
+			temp[outIndex][threadIdx.x] = temp[inIndex][threadIdx.x] + temp[inIndex][threadIdx.x - i];
+		}
+		else
+		{
+			temp[outIndex][threadIdx.x] = temp[inIndex][threadIdx.x];
+		}
+
 		LDS_BARRIER;
 	}
+
+	lds[threadIdx.x] = temp[outIndex][threadIdx.x];
+
+	// Ensure the results are written in LDS and are observable in a block (workgroup) before return.
+	__threadfence_block();
 }
 
 template<typename T>
 __device__ T ldsScanExclusive( T* lds, int width )
-{ 
-	ldsScanInclusive( lds, width );
+{
+	__shared__ T sum;
 
-	T sum = lds[width-1];
-	lds[threadIdx.x] = (threadIdx.x == 0 )? 0 : lds[threadIdx.x-1];
+	int offset = 1;
+
+	for( int d = width >> 1; d > 0; d >>= 1 )
+	{
+
+		if( threadIdx.x < d )
+		{
+			const int firstInputIndex = offset * ( 2 * threadIdx.x + 1 ) - 1;
+			const int secondInputIndex = offset * ( 2 * threadIdx.x + 2 ) - 1;
+
+			lds[secondInputIndex] += lds[firstInputIndex];
+		}
+		LDS_BARRIER;
+
+		offset *= 2;
+	}
+
 	LDS_BARRIER;
+
+	if( threadIdx.x == 0 )
+	{
+		sum = lds[width - 1];
+		__threadfence_block();
+
+		lds[width - 1] = 0;
+		__threadfence_block();
+	}
+
+	for( int d = 1; d < width; d *= 2 )
+	{
+		offset >>= 1;
+
+		if( threadIdx.x < d )
+		{
+			const int firstInputIndex = offset * ( 2 * threadIdx.x + 1 ) - 1;
+			const int secondInputIndex = offset * ( 2 * threadIdx.x + 2 ) - 1;
+
+			const T t = lds[firstInputIndex];
+			lds[firstInputIndex] = lds[secondInputIndex];
+			lds[secondInputIndex] += t;
+		}
+		LDS_BARRIER;
+	}
+
+	LDS_BARRIER;
+
 	return sum;
 }
-
 //========================
 
 __device__ void localSort4bitMultiRef( int* keys, u32* ldsKeys, const int START_BIT )
@@ -327,7 +396,7 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 
 	LDS_BARRIER;
 
-#if 0
+#if defined( NV_WORKAROUND )
 	if( threadIdx.x < N_BINS_PACKED_4BIT ) // 16 scans, pack 4 scans into 1 to make 4 parallel scans
 	{
 		u64 sum = 0;
@@ -469,7 +538,7 @@ extern "C" __global__ void SortKernel2( int* gSrc, int* gDst, int* gHistogram, i
 		{
 			histogram[i] = ldsHistogram[threadIdx.x * N_BINS_PER_WI + i];
 		}
-#if 0
+#if defined( NV_WORKAROUND )
 		if( threadIdx.x == 0 ) // todo. parallel scan
 		{
 			int sum = 0;
@@ -552,11 +621,12 @@ extern "C" __global__ void ParallelExclusiveScanSingleWG( int* gCount, int* gHis
 	// Do parallel exclusive scan on the LDS
 
 	int globalSum = 0;
-	for( int binId = 0; binId < BIN_SIZE; binId += WG_SIZE )
+	for( int binId = 0; binId < BIN_SIZE; binId += WG_SIZE * 2 )
 	{
 		int* globalOffset = &blockBuffer[binId];
-		int currentGlobalSum = ldsScanExclusive( globalOffset, WG_SIZE );
-		globalOffset[threadIdx.x] += globalSum;
+		int currentGlobalSum = ldsScanExclusive( globalOffset, WG_SIZE * 2 );
+		globalOffset[threadIdx.x * 2] += globalSum;
+		globalOffset[threadIdx.x * 2 + 1] += globalSum;
 		globalSum += currentGlobalSum;
 	}
 
