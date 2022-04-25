@@ -113,44 +113,47 @@ struct OrochiUtilsImpl
 	bool readSourceCode( const std::string& path, std::string& sourceCode, std::vector<std::string>* includes )
 	{
 		std::fstream f( path );
-		if( f.is_open() )
+
+		if( !f )
 		{
-			size_t sizeFile;
-			f.seekg( 0, std::fstream::end );
-			size_t size = sizeFile = (size_t)f.tellg();
-			f.seekg( 0, std::fstream::beg );
-			if( includes )
+			return false;
+		} 
+
+
+		size_t sizeFile;
+		f.seekg( 0, std::fstream::end );
+		size_t size = sizeFile = (size_t)f.tellg();
+		f.seekg( 0, std::fstream::beg );
+		if( includes )
+		{
+			sourceCode.clear();
+			std::string line;
+			char buf[512];
+			while( std::getline( f, line ) )
 			{
-				sourceCode.clear();
-				std::string line;
-				char buf[512];
-				while( std::getline( f, line ) )
+				if( strstr( line.c_str(), "#include" ) != 0 )
 				{
-					if( strstr( line.c_str(), "#include" ) != 0 )
-					{
-						const char* a = strstr( line.c_str(), "<" );
-						const char* b = strstr( line.c_str(), ">" );
-						int n = b - a - 1;
-						memcpy( buf, a + 1, n );
-						buf[n] = '\0';
-						includes->push_back( buf );
-						sourceCode += line + '\n';
-					}
-					else
-					{
-						sourceCode += line + '\n';
-					}
+					const char* a = strstr( line.c_str(), "<" );
+					const char* b = strstr( line.c_str(), ">" );
+					int n = b - a - 1;
+					memcpy( buf, a + 1, n );
+					buf[n] = '\0';
+					includes->push_back( buf );
+					sourceCode += line + '\n';
+				}
+				else
+				{
+					sourceCode += line + '\n';
 				}
 			}
-			else
-			{
-				sourceCode.resize( size, ' ' );
-				f.read( &sourceCode[0], size );
-			}
-			f.close();
-			return true;
 		}
-		return false;
+		else
+		{
+			sourceCode.resize( size, ' ' );
+			f.read( &sourceCode[0], size );
+		}
+
+		return true;
 	}
 
 	static void getCacheFileName( oroDevice device, const char* moduleName, const char* functionName, const char* options, std::string& binFileName )
@@ -382,44 +385,45 @@ struct OrochiUtilsImpl
 char* OrochiUtils::s_cacheDirectory = "./cache/";
 std::map<std::string, oroFunction> OrochiUtils::s_kernelMap;
 
-oroFunction OrochiUtils::getFunctionFromFile( oroDevice device, const char* path, const char* funcName, std::vector<const char*>* optsIn )
-{ 
+oroFunction OrochiUtils::getFunctionFromFile( oroDevice device, const char* path, const char* funcName, const std::vector<const char*>& optsIn )
+{
 	std::string cacheName = OrochiUtilsImpl::getCacheName( path, funcName );
-	if( s_kernelMap.find( cacheName.c_str() ) != s_kernelMap.end() )
+	if( s_kernelMap.find( cacheName ) != s_kernelMap.end() )
 	{
-		return s_kernelMap[ cacheName ];
+		return s_kernelMap[cacheName];
 	}
 
 	std::string source;
-	if( !OrochiUtilsImpl::readSourceCode( path, source, 0 ) )
-		return 0;
+	if( !OrochiUtilsImpl::readSourceCode( path, source, 0 ) ) return nullptr;
 
 	oroFunction f = getFunction( device, source.c_str(), path, funcName, optsIn );
 	s_kernelMap[cacheName] = f;
 	return f;
 }
 
-oroFunction OrochiUtils::getFunction( oroDevice device, const char* code, const char* path, const char* funcName, std::vector<const char*>* optsIn )
+oroFunction OrochiUtils::getFunction( oroDevice device, const char* code, const char* path, const char* funcName, const std::vector<const char*>& optsIn )
 {
 	std::vector<const char*> opts;
 	opts.push_back( "-std=c++14" );
 
-	if( optsIn )
+	if( !optsIn.empty() )
 	{
-		for( int i = 0; i < optsIn->size(); i++ )
-			opts.push_back( ( *optsIn )[i] );
+		std::copy( std::cbegin( optsIn ), std::cend( optsIn ), std::back_inserter( opts ) );
 	}
+
 	//	if( oroGetCurAPI(0) == ORO_API_CUDA )
 	//		opts.push_back( "-G" );
 
-	oroFunction function;
 	std::vector<char> codec;
 
 	std::string cacheFile;
 	{
 		std::string o;
-		for(int i=0; i<opts.size(); i++)
-			o.append( opts[i] );
+		for( const auto& opt : opts )
+		{
+			o.append( opt );
+		}
+
 		OrochiUtilsImpl::getCacheFileName( device, path, funcName, o.c_str(), cacheFile );
 	}
 	if( OrochiUtilsImpl::isFileUpToDate( cacheFile.c_str(), path ) )
@@ -458,7 +462,10 @@ oroFunction OrochiUtils::getFunction( oroDevice device, const char* code, const 
 	}
 	oroModule module;
 	oroError ee = oroModuleLoadData( &module, codec.data() );
+
+	oroFunction function;
 	ee = oroModuleGetFunction( &function, module, funcName );
+	OROASSERT( ee == oroSuccess, 0 );
 
 	return function;
 }
