@@ -2,6 +2,9 @@
 #include <Test/ParallelPrimitives/RadixSort.h>
 #include <Test/ParallelPrimitives/RadixSortConfigs.h>
 #include <numeric>
+#include <Test/Stopwatch.h>
+
+#define PROFILE 1
 
 namespace
 {
@@ -173,13 +176,21 @@ void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, 
 		printf( "nNItemsPerWI: %d\n", nItemsPerWI );
 	}
 
+	float t[3] = {0.f};
 	{
+		Stopwatch sw; sw.start();
 		const auto func{ reference ? oroFunctions[Kernel::COUNT_REF] : oroFunctions[Kernel::COUNT] };
 		const void* args[] = { &src, &temps, &n, &nItemsPerWI, &startBit, &m_nWGsToExecute };
 		OrochiUtils::launch1D( func, WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
+#if defined(PROFILE)
+		OrochiUtils::waitForCompletion();
+		sw.stop();
+		t[0] = sw.getMs();
+#endif
 	}
 
 	{
+		Stopwatch sw; sw.start();
 		switch( selectedScanAlgo )
 		{
 		case ScanAlgo::SCAN_CPU:
@@ -206,13 +217,27 @@ void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, 
 			exclusiveScanCpu( temps, temps, m_nWGsToExecute );
 			break;
 		}
+#if defined(PROFILE)
+		OrochiUtils::waitForCompletion();
+		sw.stop();
+		t[1] = sw.getMs();
+#endif
 	}
 
 	{
+		Stopwatch sw; sw.start();
 		const auto func{ reference ? oroFunctions[Kernel::SORT_REF] : oroFunctions[Kernel::SORT] };
 		const void* args[] = { &src, &dst, &temps, &n, &nItemsPerWI, &startBit, &m_nWGsToExecute };
 		OrochiUtils::launch1D( func, WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
+#if defined(PROFILE)
+		OrochiUtils::waitForCompletion();
+		sw.stop();
+		t[2] = sw.getMs();
+#endif
 	}
+#if defined(PROFILE)
+	printf("%3.2f, %3.2f, %3.2f\n", t[0], t[1], t[2]);
+#endif
 }
 
 }; // namespace Oro
