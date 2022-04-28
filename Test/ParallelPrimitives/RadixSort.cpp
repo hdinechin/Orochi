@@ -128,6 +128,7 @@ void RadixSort::configure( oroDevice device, u32& tempBufferSizeOut )
 
 	const auto newWGsToExecute{ props.multiProcessorCount * occupancy };
 
+
 	if( newWGsToExecute != m_nWGsToExecute && selectedScanAlgo == ScanAlgo::SCAN_GPU_PARALLEL )
 	{
 		OrochiUtils::free( m_partialSum );
@@ -183,18 +184,25 @@ void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, 
 
 	const int nWIs = WG_SIZE * m_nWGsToExecute;
 	int nItemsPerWI = ( n + ( nWIs - 1 ) ) / nWIs;
+
+	// TODO:
+	// The Sort Kernel assumes an implicit special number of how many elements are processed in a WG.
+	// This should be changed.
+	int nItemPerWG = nItemsPerWI * WG_SIZE;
+
 	if( m_flags & FLAG_LOG )
 	{
 		printf( "nWGs: %d\n", m_nWGsToExecute );
 		printf( "nNItemsPerWI: %d\n", nItemsPerWI );
+		printf( "nItemPerWG: %d\n", nItemPerWG );
 	}
-
+	
 	float t[3] = {0.f};
 	{
 		Stopwatch sw; sw.start();
 		const auto func{ reference ? oroFunctions[Kernel::COUNT_REF] : oroFunctions[Kernel::COUNT] };
-		const void* args[] = { &src, &temps, &n, &nItemsPerWI, &startBit, &m_nWGsToExecute };
-		OrochiUtils::launch1D( func, WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
+		const void* args[] = { &src, &temps, &n, &nItemPerWG, &startBit, &m_nWGsToExecute };
+		OrochiUtils::launch1D( func, COUNT_WG_SIZE * m_nWGsToExecute, args, COUNT_WG_SIZE );
 #if defined(PROFILE)
 		OrochiUtils::waitForCompletion();
 		sw.stop();
