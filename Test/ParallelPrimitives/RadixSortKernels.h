@@ -83,7 +83,37 @@ __global__ void SortKernelReference( int* gSrc, int* gDst, int* gHistogram, int 
 
 //=====
 
-extern "C" __global__ void CountKernel( int* gSrc, int* gDst, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
+
+extern "C" __global__ void CountKernel( int* gSrc, int* gDst, int gN, int gNItemsPerWG, const int START_BIT, const int N_WGS_EXECUTED )
+{
+	__shared__ int table[BIN_SIZE];
+
+	for( int i = threadIdx.x; i < BIN_SIZE; i += COUNT_WG_SIZE )
+	{
+		table[threadIdx.x] = 0;
+	}
+
+	LDS_BARRIER;
+
+	const int offset = blockIdx.x * gNItemsPerWG;
+	const int upperBound = ( offset + gNItemsPerWG > gN ) ? gN - offset : gNItemsPerWG;
+
+	for( int i = threadIdx.x; i < upperBound; i += COUNT_WG_SIZE )
+	{
+		const int idx = offset + i;
+		const int tableIdx = ( gSrc[idx] >> START_BIT ) & RADIX_MASK;
+		atomicAdd( &table[tableIdx], 1 );
+	}
+
+	LDS_BARRIER;
+
+	// Assume COUNT_WG_SIZE == BIN_SIZE
+	gDst[threadIdx.x * N_WGS_EXECUTED + blockIdx.x] = table[threadIdx.x];
+}
+
+
+
+extern "C" __global__ void CountKernel_tmp( int* gSrc, int* gDst, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
 {
 	const int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
 	const int offset = blockIdx.x * blockDim.x * gNItemsPerWI;
