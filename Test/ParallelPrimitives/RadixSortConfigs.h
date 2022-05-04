@@ -16,6 +16,7 @@ constexpr auto N_BINS_PACK_FACTOR{ sizeof( long long ) / sizeof( short ) };
 constexpr auto N_BINS_PACKED_4BIT{ N_BINS_4BIT / N_BINS_PACK_FACTOR };
 
 
+constexpr auto N_BINS_8BIT{ 1 << 8};
 // count config
 
 constexpr auto COUNT_WG_SIZE{ BIN_SIZE };

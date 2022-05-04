@@ -90,7 +90,7 @@ extern "C" __global__ void CountKernel( int* gSrc, int* gDst, int gN, int gNItem
 
 	for( int i = threadIdx.x; i < BIN_SIZE; i += COUNT_WG_SIZE )
 	{
-		table[threadIdx.x] = 0;
+		table[i] = 0;
 	}
 
 	LDS_BARRIER;
@@ -512,19 +512,6 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 
 	LDS_BARRIER;
 
-#if defined( NV_WORKAROUND )
-	if( threadIdx.x < N_BINS_PACKED_4BIT ) // 16 scans, pack 4 scans into 1 to make 4 parallel scans
-	{
-		u64 sum = 0;
-		for( int i = 0; i < WG_SIZE; i++ )
-		{
-			u64 t = lds.m_packed[i][threadIdx.x];
-			lds.m_packed[i][threadIdx.x] = sum;
-			sum += t;
-		}
-		lds.m_packed[WG_SIZE][threadIdx.x] = sum;
-	}
-#else
 	for( int ii = 0; ii < N_BINS_PACKED_4BIT; ii++)
 	{
 		ldsTemp[threadIdx.x] = lds.m_packed[threadIdx.x][ii];
@@ -535,21 +522,12 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 
 		if( threadIdx.x == 0 ) lds.m_packed[EXEC_WIDTH][ii] = sum;
 	}
-#endif
+
 	LDS_BARRIER;
-	if( threadIdx.x == 0 ) // todo. parallel scan
-	{
-		int sum = 0;
-		for( int i = 0; i < N_BINS_PACKED_4BIT; i++ )
-		{
-			for( int j = 0; j < N_BINS_PACK_FACTOR; j++)
-			{
-				int t = lds.m_unpacked[EXEC_WIDTH][i][j];
-				lds.m_unpacked[EXEC_WIDTH][i][j] = sum;
-				sum += t;
-			}
-		}
-	}
+
+	auto* tmp = &lds.m_unpacked[EXEC_WIDTH][0][0];
+	ldsScanExclusive(tmp, N_BINS_PACKED_4BIT * N_BINS_PACK_FACTOR );
+
 	LDS_BARRIER;
 
 	for( int i = 0; i < N_ITEMS_PER_WI; i++ )
@@ -570,7 +548,119 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 	}
 }
 
+__device__ void localSort8bitMulti_shared_bin( int* keys, volatile u32* ldsKeys, const int START_BIT )
+{
+	__shared__ unsigned table[BIN_SIZE];
+
+	for( int i = threadIdx.x; i < BIN_SIZE; i += WG_SIZE )
+	{
+		table[i] = 0U;
+	}
+
+	LDS_BARRIER;
+
+	for( int i = 0; i < SORT_N_ITEMS_PER_WI; ++i )
+	{
+		const int tableIdx = ( keys[i] >> START_BIT ) & RADIX_MASK;
+		atomicAdd( &table[tableIdx], 1 );
+	}
+
+	LDS_BARRIER;
+
+	int globalSum = 0;
+	for( int binId = 0; binId < BIN_SIZE; binId += WG_SIZE * 2 )
+	{
+		unsigned* globalOffset = &table[binId];
+		const unsigned currentGlobalSum = ldsScanExclusive( globalOffset, WG_SIZE * 2 );
+		globalOffset[threadIdx.x * 2] += globalSum;
+		globalOffset[threadIdx.x * 2 + 1] += globalSum;
+		globalSum += currentGlobalSum;
+	}
+
+	LDS_BARRIER;
+
+	for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
+	{
+		const int tableIdx = ( keys[i] >> START_BIT ) & RADIX_MASK;
+		const int writeIndex = atomicAdd( &table[tableIdx], 1 );
+
+		ldsKeys[writeIndex] = keys[i];
+	}
+
+	LDS_BARRIER;
+
+	for( int i = 0; i < SORT_N_ITEMS_PER_WI; ++i )
+	{
+		keys[i] = ldsKeys[threadIdx.x * SORT_N_ITEMS_PER_WI + i];
+	}
+}
+
 __device__ void localSort8bitMulti( int* keys, u32* ldsKeys, const int START_BIT )
+{
+	constexpr auto N_GROUP_SIZE{ N_BINS_8BIT / ( sizeof( u64 ) / sizeof( u16 ) ) };
+
+	__shared__ union
+	{
+		u16 m_ungrouped[WG_SIZE + 1][N_BINS_8BIT];
+		u64 m_grouped[WG_SIZE + 1][N_GROUP_SIZE];
+	} lds;
+
+	for( int i = 0; i < N_GROUP_SIZE; ++i )
+	{
+		lds.m_grouped[threadIdx.x][i] = 0U;
+	}
+
+	for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
+	{
+		const auto in8bit = ( keys[i] >> START_BIT ) & RADIX_MASK;
+		++lds.m_ungrouped[threadIdx.x][in8bit];
+	}
+
+	LDS_BARRIER;
+
+	for( int groupId = threadIdx.x; groupId < N_GROUP_SIZE; groupId += WG_SIZE )
+	{
+		u64 sum = 0U;
+		for( int i = 0; i < WG_SIZE; i++ )
+		{
+			const auto t = lds.m_grouped[i][groupId];
+			lds.m_grouped[i][groupId] = sum;
+			sum += t;
+		}
+		lds.m_grouped[WG_SIZE][groupId] = sum;
+	}
+
+	LDS_BARRIER;
+
+	int globalSum = 0;
+	for( int binId = 0; binId < N_BINS_8BIT; binId += WG_SIZE * 2 )
+	{
+		auto* globalOffset = &lds.m_ungrouped[WG_SIZE][binId];
+		const int currentGlobalSum = ldsScanExclusive( globalOffset, WG_SIZE * 2 );
+		globalOffset[threadIdx.x * 2] += globalSum;
+		globalOffset[threadIdx.x * 2 + 1] += globalSum;
+		globalSum += currentGlobalSum;
+	}
+
+	LDS_BARRIER;
+
+	for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
+	{
+		const auto in8bit = ( keys[i] >> START_BIT ) & RADIX_MASK;
+		const auto offset = lds.m_ungrouped[WG_SIZE][in8bit];
+		const auto rank = lds.m_ungrouped[threadIdx.x][in8bit]++;
+
+		ldsKeys[offset + rank] = keys[i];
+	}
+	LDS_BARRIER;
+
+	for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
+	{
+		keys[i] = ldsKeys[threadIdx.x * SORT_N_ITEMS_PER_WI + i];
+	}
+}
+
+__device__ void localSort8bitMulti_old( int* keys, u32* ldsKeys, const int START_BIT )
 {
 	localSort4bitMulti<SORT_N_ITEMS_PER_WI, WG_SIZE>( keys, ldsKeys, START_BIT );
 	if( N_RADIX > 4 ) localSort4bitMulti<SORT_N_ITEMS_PER_WI, WG_SIZE>( keys, ldsKeys, START_BIT + 4 );
