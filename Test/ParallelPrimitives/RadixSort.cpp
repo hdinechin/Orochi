@@ -185,9 +185,11 @@ void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, 
 	const int nWIs = WG_SIZE * m_nWGsToExecute;
 	int nItemsPerWI = ( n + ( nWIs - 1 ) ) / nWIs;
 
-	// TODO:
-	// The Sort Kernel assumes an implicit special number of how many elements are processed in a WG.
-	// This should be changed.
+	// Adjust nItemsPerWI to be dividable by SORT_N_ITEMS_PER_WI.
+	// nItemsPerWI cannot be smaller than or equal to SORT_N_ITEMS_PER_WI !
+
+	nItemsPerWI = ( ( nItemsPerWI / SORT_N_ITEMS_PER_WI ) + 1 ) * SORT_N_ITEMS_PER_WI;
+
 	int nItemPerWG = nItemsPerWI * WG_SIZE;
 
 	if( m_flags & FLAG_LOG )
