@@ -495,28 +495,29 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 		u16 m_unpacked[EXEC_WIDTH + 1][N_BINS_PACKED_4BIT][N_BINS_PACK_FACTOR];
 		u64 m_packed[EXEC_WIDTH + 1][N_BINS_PACKED_4BIT];
 	} lds;
-	__shared__ u64 ldsTemp[EXEC_WIDTH];//todo. remove me
 
-	for( int i = 0; i < N_BINS_PACKED_4BIT; i++ )
+	__shared__ u64 ldsTemp[EXEC_WIDTH];
+
+	for( int i = 0; i < N_BINS_PACKED_4BIT; ++i )
 	{
-		lds.m_packed[threadIdx.x][i] = 0;
+		lds.m_packed[threadIdx.x][i] = 0UL;
 	}
 
-	for( int i = 0; i < N_ITEMS_PER_WI; i++ )
+	for( int i = 0; i < N_ITEMS_PER_WI; ++i )
 	{
-		int in4bit = ( keys[i] >> START_BIT ) & 0xf;
-		int packIdx = in4bit/N_BINS_PACK_FACTOR;
-		int idx = in4bit % N_BINS_PACK_FACTOR;
+		const int in4bit = ( keys[i] >> START_BIT ) & 0xf;
+		const int packIdx = in4bit/N_BINS_PACK_FACTOR;
+		const int idx = in4bit % N_BINS_PACK_FACTOR;
 		lds.m_unpacked[threadIdx.x][packIdx][idx] += 1;
 	}
 
 	LDS_BARRIER;
 
-	for( int ii = 0; ii < N_BINS_PACKED_4BIT; ii++)
+	for( int ii = 0; ii < N_BINS_PACKED_4BIT; ++ii)
 	{
 		ldsTemp[threadIdx.x] = lds.m_packed[threadIdx.x][ii];
 		LDS_BARRIER;
-		u64 sum = ldsScanExclusive( ldsTemp, EXEC_WIDTH );
+		const u64 sum = ldsScanExclusive( ldsTemp, EXEC_WIDTH );
 		LDS_BARRIER;
 		lds.m_packed[threadIdx.x][ii] = ldsTemp[threadIdx.x];
 
@@ -530,24 +531,25 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 
 	LDS_BARRIER;
 
-	for( int i = 0; i < N_ITEMS_PER_WI; i++ )
+	for( int i = 0; i < N_ITEMS_PER_WI; ++i )
 	{
-		int in4bit = ( keys[i] >> START_BIT ) & 0xf;
-		int packIdx = in4bit / N_BINS_PACK_FACTOR;
-		int idx = in4bit % N_BINS_PACK_FACTOR;
-		int offset = lds.m_unpacked[EXEC_WIDTH][packIdx][idx];
-		int rank = lds.m_unpacked[threadIdx.x][packIdx][idx]++;
+		const int in4bit = ( keys[i] >> START_BIT ) & 0xf;
+		const int packIdx = in4bit / N_BINS_PACK_FACTOR;
+		const int idx = in4bit % N_BINS_PACK_FACTOR;
+		const int offset = lds.m_unpacked[EXEC_WIDTH][packIdx][idx];
+		const int rank = lds.m_unpacked[threadIdx.x][packIdx][idx]++;
 
 		ldsKeys[offset + rank] = keys[i];
 	}
 	LDS_BARRIER;
 
-	for( int i = 0; i < N_ITEMS_PER_WI; i++ )
+	for( int i = 0; i < N_ITEMS_PER_WI; ++i )
 	{
 		keys[i] = ldsKeys[threadIdx.x * N_ITEMS_PER_WI + i];
 	}
 }
-__device__ void localSort8bitMulti( int* keys, u32* ldsKeys, const int START_BIT )
+
+__device__ void localSort8bitMulti_shared_bin( int* keys, u32* ldsKeys, const int START_BIT )
 {
 	__shared__ unsigned table[BIN_SIZE];
 
@@ -589,7 +591,7 @@ __device__ void localSort8bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 
 	if( threadIdx.x == 0 )
 	{
-		for( int i = 0; i < WG_SIZE * SORT_N_ITEMS_PER_WI; ++i )
+		for( int i = 0; i < SORT_WG_SIZE * SORT_N_ITEMS_PER_WI; ++i )
 		{
 			const int tableIdx = ( keyBuffer[i] >> START_BIT ) & RADIX_MASK;
 			const int writeIndex = table[tableIdx];
@@ -608,14 +610,14 @@ __device__ void localSort8bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 	}
 }
 
-__device__ void localSort8bitMulti__( int* keys, u32* ldsKeys, const int START_BIT )
+__device__ void localSort8bitMulti_group( int* keys, u32* ldsKeys, const int START_BIT )
 {
 	constexpr auto N_GROUP_SIZE{ N_BINS_8BIT / ( sizeof( u64 ) / sizeof( u16 ) ) };
 
 	__shared__ union
 	{
-		u16 m_ungrouped[WG_SIZE + 1][N_BINS_8BIT];
-		u64 m_grouped[WG_SIZE + 1][N_GROUP_SIZE];
+		u16 m_ungrouped[SORT_WG_SIZE + 1][N_BINS_8BIT];
+		u64 m_grouped[SORT_WG_SIZE + 1][N_GROUP_SIZE];
 	} lds;
 
 	for( int i = 0; i < N_GROUP_SIZE; ++i )
@@ -631,25 +633,25 @@ __device__ void localSort8bitMulti__( int* keys, u32* ldsKeys, const int START_B
 
 	LDS_BARRIER;
 
-	for( int groupId = threadIdx.x; groupId < N_GROUP_SIZE; groupId += WG_SIZE )
+	for( int groupId = threadIdx.x; groupId < N_GROUP_SIZE; groupId += SORT_WG_SIZE)
 	{
 		u64 sum = 0U;
-		for( int i = 0; i < WG_SIZE; i++ )
+		for( int i = 0; i < SORT_WG_SIZE; i++ )
 		{
 			const auto current = lds.m_grouped[i][groupId];
 			lds.m_grouped[i][groupId] = sum;
 			sum += current;
 		}
-		lds.m_grouped[WG_SIZE][groupId] = sum;
+		lds.m_grouped[SORT_WG_SIZE][groupId] = sum;
 	}
 
 	LDS_BARRIER;
 
 	int globalSum = 0;
-	for( int binId = 0; binId < N_BINS_8BIT; binId += WG_SIZE * 2 )
+	for( int binId = 0; binId < N_BINS_8BIT; binId += SORT_WG_SIZE * 2 )
 	{
-		auto* globalOffset = &lds.m_ungrouped[WG_SIZE][binId];
-		const int currentGlobalSum = ldsScanExclusive( globalOffset, WG_SIZE * 2 );
+		auto* globalOffset = &lds.m_ungrouped[SORT_WG_SIZE][binId];
+		const int currentGlobalSum = ldsScanExclusive( globalOffset, SORT_WG_SIZE * 2 );
 		globalOffset[threadIdx.x * 2] += globalSum;
 		globalOffset[threadIdx.x * 2 + 1] += globalSum;
 		globalSum += currentGlobalSum;
@@ -660,7 +662,7 @@ __device__ void localSort8bitMulti__( int* keys, u32* ldsKeys, const int START_B
 	for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
 	{
 		const auto in8bit = ( keys[i] >> START_BIT ) & RADIX_MASK;
-		const auto offset = lds.m_ungrouped[WG_SIZE][in8bit];
+		const auto offset = lds.m_ungrouped[SORT_WG_SIZE][in8bit];
 		const auto rank = lds.m_ungrouped[threadIdx.x][in8bit]++;
 
 		ldsKeys[offset + rank] = keys[i];
@@ -675,13 +677,13 @@ __device__ void localSort8bitMulti__( int* keys, u32* ldsKeys, const int START_B
 }
 
 
-__device__ void localSort8bitMulti_old( int* keys, u32* ldsKeys, const int START_BIT )
+__device__ void localSort8bitMulti( int* keys, u32* ldsKeys, const int START_BIT )
 {
-	localSort4bitMulti<SORT_N_ITEMS_PER_WI, WG_SIZE>( keys, ldsKeys, START_BIT );
-	if( N_RADIX > 4 ) localSort4bitMulti<SORT_N_ITEMS_PER_WI, WG_SIZE>( keys, ldsKeys, START_BIT + 4 );
+	localSort4bitMulti<SORT_N_ITEMS_PER_WI, SORT_WG_SIZE>( keys, ldsKeys, START_BIT );
+	if( N_RADIX > 4 ) localSort4bitMulti<SORT_N_ITEMS_PER_WI, SORT_WG_SIZE>( keys, ldsKeys, START_BIT + 4 );
 }
 
-extern "C" __global__ void SortKernel( int* gSrc, int* gDst, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
+extern "C" __global__ void SortKernel_old( int* gSrc, int* gDst, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
 {
 	const int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
 	int offset = blockIdx.x * blockDim.x * gNItemsPerWI;
@@ -803,15 +805,21 @@ extern "C" __global__ void SortKernel( int* gSrc, int* gDst, int* gHistogram, in
 	}
 }
 
-extern "C" __global__ void SortKernel1( int* gSrc, int* gDst, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
+extern "C" __global__ void SortKernel( int* gSrc, int* gDst, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
 {
-	const int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
+
 	int offset = blockIdx.x * blockDim.x * gNItemsPerWI;
+	if( offset > gN )
+	{
+		return;
+	}
+
+	const int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
 	const int wgIdx = blockIdx.x;
 
 	__shared__ u32 localOffsets[BIN_SIZE];
 
-	__shared__ u32 ldsKeys[WG_SIZE * SORT_N_ITEMS_PER_WI]; // todo. can be aliased
+	__shared__ u32 ldsKeys[SORT_WG_SIZE * SORT_N_ITEMS_PER_WI];
 
 	__shared__ union
 	{
@@ -821,7 +829,7 @@ extern "C" __global__ void SortKernel1( int* gSrc, int* gDst, int* gHistogram, i
 
 	int keys[SORT_N_ITEMS_PER_WI] = { 0 };
 
-	for( int i = threadIdx.x; i < BIN_SIZE; i += WG_SIZE )
+	for( int i = threadIdx.x; i < BIN_SIZE; i += SORT_WG_SIZE )
 	{
 		localOffsets[i] = gHistogram[i * N_WGS_EXECUTED + wgIdx];
 	}
@@ -829,62 +837,58 @@ extern "C" __global__ void SortKernel1( int* gSrc, int* gDst, int* gHistogram, i
 
 	for( int ii = 0; ii < gNItemsPerWI; ii += SORT_N_ITEMS_PER_WI )
 	{
-		for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
+		for( int i = 0; i < SORT_N_ITEMS_PER_WI; ++i )
 		{
-			int idx = offset + i * WG_SIZE + threadIdx.x;
-			ldsKeys[i * WG_SIZE + threadIdx.x] = ( idx < gN ) ? gSrc[idx] : 0xffffffff;
+			const int idx = offset + i * SORT_WG_SIZE + threadIdx.x;
+			ldsKeys[i * SORT_WG_SIZE + threadIdx.x] = ( idx < gN ) ? gSrc[idx] : 0xffffffff;
 		}
 		LDS_BARRIER;
 
-		for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
+		for( int i = 0; i < SORT_N_ITEMS_PER_WI; ++i )
 		{
-			int idx = threadIdx.x * SORT_N_ITEMS_PER_WI + i;
+			const int idx = threadIdx.x * SORT_N_ITEMS_PER_WI + i;
 			keys[i] = ldsKeys[idx];
 		}
 
 		// local sort keys[];
 		localSort8bitMulti( keys, ldsKeys, START_BIT );
-#if 0
-		if( THE_FIRST_THREAD )
-		{
-			for( int i = 0; i < WG_SIZE * SORT_N_ITEMS_PER_WI ; i++)
-				printf("%d,", ldsKeys[i]);
-			printf("\n");
-		}
-		break;
-#endif
-		for( int i = threadIdx.x; i < BIN_SIZE; i += WG_SIZE )
+
+		for( int i = threadIdx.x; i < BIN_SIZE; i += SORT_WG_SIZE )
 		{
 			lds.histogramU32[i] = 0;
 		}
 		LDS_BARRIER;
 
-		for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
+		for( int i = 0; i < SORT_N_ITEMS_PER_WI; ++i )
 		{
-			int a = threadIdx.x * SORT_N_ITEMS_PER_WI + i;
-			int b = a - 1;
-			int aa = ( ldsKeys[a] >> START_BIT ) & RADIX_MASK;
-			int bb = ( ( ( b >= 0 ) ? ldsKeys[b] : 0xffffffff ) >> START_BIT ) & RADIX_MASK;
+			const int a = threadIdx.x * SORT_N_ITEMS_PER_WI + i;
+			const int b = a - 1;
+			const int aa = ( ldsKeys[a] >> START_BIT ) & RADIX_MASK;
+			const int bb = ( ( ( b >= 0 ) ? ldsKeys[b] : 0xffffffff ) >> START_BIT ) & RADIX_MASK;
 			if( aa != bb )
 			{
 				lds.histogram[0][aa] = a;
 				if( b >= 0 ) lds.histogram[1][bb] = a;
 			}
 		}
-		if( threadIdx.x == 0 ) lds.histogram[1][( ldsKeys[SORT_N_ITEMS_PER_WI * WG_SIZE - 1] >> START_BIT ) & RADIX_MASK] = SORT_N_ITEMS_PER_WI * WG_SIZE;
+		if( threadIdx.x == 0 ) lds.histogram[1][( ldsKeys[SORT_N_ITEMS_PER_WI * SORT_WG_SIZE - 1] >> START_BIT ) & RADIX_MASK] = SORT_N_ITEMS_PER_WI * SORT_WG_SIZE;
 
 		LDS_BARRIER;
 
-		for( int i = 0; i < SORT_N_ITEMS_PER_WI; i++ )
+		const int upperBound = ( offset + threadIdx.x * SORT_N_ITEMS_PER_WI + SORT_N_ITEMS_PER_WI > gN ) ? ( gN - ( offset + threadIdx.x * SORT_N_ITEMS_PER_WI ) ) : SORT_N_ITEMS_PER_WI;
+		if( upperBound < 0 )
+		{
+			return;
+		}
+
+		for( int i = 0; i < upperBound; ++i )
 		{
 			const int idx = offset + threadIdx.x * SORT_N_ITEMS_PER_WI + i;
-			if( idx < gN )
-			{
-				int tableIdx = ( keys[i] >> START_BIT ) & RADIX_MASK;
-				int dstIdx = localOffsets[tableIdx] + ( threadIdx.x * SORT_N_ITEMS_PER_WI + i ) - lds.histogram[0][tableIdx];
-				gDst[dstIdx] = keys[i];
-			}
+			const int tableIdx = ( keys[i] >> START_BIT ) & RADIX_MASK;
+			const int dstIdx = localOffsets[tableIdx] + ( threadIdx.x * SORT_N_ITEMS_PER_WI + i ) - lds.histogram[0][tableIdx];
+			gDst[dstIdx] = keys[i];
 		}
+
 		LDS_BARRIER;
 
 		for( int i = 0; i < N_BINS_PER_WI; i++ )
@@ -892,8 +896,12 @@ extern "C" __global__ void SortKernel1( int* gSrc, int* gDst, int* gHistogram, i
 			const int idx = threadIdx.x * N_BINS_PER_WI + i;
 			localOffsets[idx] += lds.histogram[1][idx] - lds.histogram[0][idx];
 		}
-		//===
-		offset += WG_SIZE * SORT_N_ITEMS_PER_WI;
+
+		offset += SORT_WG_SIZE * SORT_N_ITEMS_PER_WI;
+		if( offset > gN )
+		{
+			return;
+		}
 	}
 }
 

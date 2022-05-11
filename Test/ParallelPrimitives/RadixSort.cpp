@@ -110,7 +110,7 @@ void RadixSort::compileKernels( oroDevice device )
 	oroFunctions[Kernel::SCAN_PARALLEL] = OrochiUtils::getFunctionFromFile( device, kernelPath, "ParallelExclusiveScanAllWG", &opts );
 	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::SCAN_PARALLEL] );
 
-	oroFunctions[Kernel::SORT] = OrochiUtils::getFunctionFromFile( device, kernelPath, "SortKernel1", &opts );
+	oroFunctions[Kernel::SORT] = OrochiUtils::getFunctionFromFile( device, kernelPath, "SortKernel", &opts );
 	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::SORT] );
 
 	oroFunctions[Kernel::SORT_REF] = OrochiUtils::getFunctionFromFile( device, kernelPath, "SortKernelReference", &opts );
@@ -186,9 +186,7 @@ void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, 
 	int nItemsPerWI = ( n + ( nWIs - 1 ) ) / nWIs;
 
 	// Adjust nItemsPerWI to be dividable by SORT_N_ITEMS_PER_WI.
-	// nItemsPerWI cannot be smaller than or equal to SORT_N_ITEMS_PER_WI !
-
-	nItemsPerWI = ( ( nItemsPerWI / SORT_N_ITEMS_PER_WI ) + 1 ) * SORT_N_ITEMS_PER_WI;
+	nItemsPerWI = ( std::ceil( static_cast<double>( nItemsPerWI ) / SORT_N_ITEMS_PER_WI ) ) * SORT_N_ITEMS_PER_WI;
 
 	int nItemPerWG = nItemsPerWI * WG_SIZE;
 
