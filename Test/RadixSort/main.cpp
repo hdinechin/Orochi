@@ -166,7 +166,9 @@ int main(int argc, char** argv )
 	{
 		oroDeviceProp props;
 		oroGetDeviceProperties( &props, device );
-		printf( "executing on %s (%s), %d SIMDs\n", props.name, props.gcnArchName, props.multiProcessorCount );
+		int v;
+		oroDriverGetVersion( &v );
+		printf( "executing on %s (%s), %d SIMDs (driverVer.:%d)\n", props.name, props.gcnArchName, props.multiProcessorCount, v );
 	}
 
 	SortTest sort( device, ctx );
