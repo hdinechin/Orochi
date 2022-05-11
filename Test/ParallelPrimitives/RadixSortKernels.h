@@ -567,7 +567,7 @@ __device__ void localSort8bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 	LDS_BARRIER;
 
 	int globalSum = 0;
-	for( int binId = 0; binId < BIN_SIZE; binId += WG_SIZE * 2 )
+	for( int binId = 0; binId < BIN_SIZE; binId += SORT_WG_SIZE * 2 )
 	{
 		unsigned* globalOffset = &table[binId];
 		const unsigned currentGlobalSum = ldsScanExclusive( globalOffset, SORT_WG_SIZE * 2 );
@@ -578,12 +578,26 @@ __device__ void localSort8bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 
 	LDS_BARRIER;
 
+	__shared__ u32 keyBuffer[WG_SIZE * SORT_N_ITEMS_PER_WI];
+
 	for( int i = 0; i < SORT_N_ITEMS_PER_WI; ++i )
 	{
-		const int tableIdx = ( keys[i] >> START_BIT ) & RADIX_MASK;
-		const int writeIndex = atomicAdd( &table[tableIdx], 1 );
+		keyBuffer[threadIdx.x * SORT_N_ITEMS_PER_WI + i] = keys[i];
+	}
 
-		ldsKeys[writeIndex] = keys[i];
+	LDS_BARRIER;
+
+	if( threadIdx.x == 0 )
+	{
+		for( int i = 0; i < WG_SIZE * SORT_N_ITEMS_PER_WI; ++i )
+		{
+			const int tableIdx = ( keyBuffer[i] >> START_BIT ) & RADIX_MASK;
+			const int writeIndex = table[tableIdx];
+
+			ldsKeys[writeIndex] = keyBuffer[i];
+
+			++table[tableIdx];
+		}
 	}
 
 	LDS_BARRIER;
@@ -594,7 +608,7 @@ __device__ void localSort8bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 	}
 }
 
-__device__ void localSort8bitMulti_group( int* keys, u32* ldsKeys, const int START_BIT )
+__device__ void localSort8bitMulti__( int* keys, u32* ldsKeys, const int START_BIT )
 {
 	constexpr auto N_GROUP_SIZE{ N_BINS_8BIT / ( sizeof( u64 ) / sizeof( u16 ) ) };
 
