@@ -189,6 +189,11 @@ int main(int argc, char** argv )
 		sort.test( 16 * 1000 * 10, testBits, nRuns );
 		sort.test( 16 * 1000 * 100, testBits, nRuns );
 		sort.test( 16 * 1000 * 1000, testBits, nRuns );
+		printf(">> testing 16 bit sort\n");
+		const int testBits = 16;
+		sort.test( 16 * 1000 * 10, testBits, nRuns );
+		sort.test( 16 * 1000 * 100, testBits, nRuns );
+		sort.test( 16 * 1000 * 1000, testBits, nRuns );
 	}
 		break;
 	case TEST_BITS:
