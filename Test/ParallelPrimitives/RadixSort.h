@@ -37,6 +37,8 @@ class RadixSort
 
 	void compileKernels( oroDevice device );
 
+	int calculateWGsToExecute(oroDevice device) noexcept;
+
   private:
 	int m_nWGsToExecute{ 4 };
 	Flag m_flags;

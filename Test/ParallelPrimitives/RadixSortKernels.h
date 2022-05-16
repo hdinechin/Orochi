@@ -580,7 +580,7 @@ __device__ void localSort8bitMulti_shared_bin( int* keys, u32* ldsKeys, const in
 
 	LDS_BARRIER;
 
-	__shared__ u32 keyBuffer[WG_SIZE * SORT_N_ITEMS_PER_WI];
+	__shared__ u32 keyBuffer[SORT_WG_SIZE * SORT_N_ITEMS_PER_WI];
 
 	for( int i = 0; i < SORT_N_ITEMS_PER_WI; ++i )
 	{
