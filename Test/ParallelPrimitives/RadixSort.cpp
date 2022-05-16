@@ -128,9 +128,10 @@ int RadixSort::calculateWGsToExecute( oroDevice device ) noexcept
 	oroGetDeviceProperties( &props, device );
 
 	constexpr auto maxWGSize = std::max( { COUNT_WG_SIZE, SCAN_WG_SIZE, SORT_WG_SIZE } );
-	const int warpPerWG = maxWGSize / props.warpSize;
-	const int warpPerWGP = props.maxThreadsPerMultiProcessor / props.warpSize;
-	const int occupancyFromWarp = warpPerWGP / warpPerWG;
+	const int warpSize = ( props.warpSize != 0 ) ? props.warpSize : 32;
+	const int warpPerWG = maxWGSize / warpSize;
+	const int warpPerWGP = props.maxThreadsPerMultiProcessor / warpSize;
+	const int occupancyFromWarp = ( warpPerWGP > 0 ) ? ( warpPerWGP / warpPerWG ) : 1;
 
 	constexpr std::array<Kernel, 3UL> selectedKernels{ Kernel::COUNT, Kernel::SCAN_PARALLEL, Kernel::SORT };
 
