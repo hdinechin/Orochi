@@ -28,6 +28,7 @@
 #include <Test/ParallelPrimitives/RadixSortConfigs.h>
 #include <algorithm>
 #include <vector>
+#include <numeric>
 #if 1
 #include <Test/Stopwatch.h>
 #else
@@ -63,12 +64,18 @@ class SortTest
 
 	void test( int testSize, const int testBits = 32, const int nRuns = 1 )
 	{
-		using namespace std;
+
 		srand( 123 );
-		vector<u32> srcKey( testSize );
+		std::vector<u32> srcKey( testSize );
 		for( int i = 0; i < testSize; i++ )
 		{
 			srcKey[i] = getRandom( 0u, (u32)( ( 1ull << (u64)testBits ) - 1 ) );
+		}
+
+		std::vector<u32> srcValue( testSize );
+		for( int i = 0; i < testSize; i++ )
+		{
+			srcValue[i] = getRandom( 0u, (u32)( ( 1ull << (u64)testBits ) - 1 ) );
 		}
 
 		Oro::RadixSort::KeyValueSoA srcGpu{};
@@ -77,11 +84,18 @@ class SortTest
 		OrochiUtils::malloc( srcGpu.key, testSize );
 		OrochiUtils::malloc( dstGpu.key, testSize );
 
+		OrochiUtils::malloc( srcGpu.value, testSize );
+		OrochiUtils::malloc( dstGpu.value, testSize );
+
 		Stopwatch sw;
 		for( int i = 0; i < nRuns; i++ )
 		{
 			OrochiUtils::copyHtoD( srcGpu.key, srcKey.data(), testSize );
 			OrochiUtils::waitForCompletion();
+
+			OrochiUtils::copyHtoD( srcGpu.value, srcValue.data(), testSize );
+			OrochiUtils::waitForCompletion();
+
 			sw.start();
 			m_sort.sort( srcGpu, dstGpu, testSize, 0, testBits, m_tempBuffer );
 			OrochiUtils::waitForCompletion();
@@ -91,22 +105,52 @@ class SortTest
 			printf( "%3.2fms (%3.2fGKeys/s) sorting %3.1fMkeys\n", ms, gKeys_s, testSize / 1000.f / 1000.f );
 		}
 
-		vector<u32> dstKey( testSize );
+		std::vector<u32> dstKey( testSize );
 		OrochiUtils::copyDtoH( dstKey.data(), dstGpu.key, testSize );
 
-		std::sort( srcKey.begin(), srcKey.end() );
+		std::vector<u32> dstValue( testSize );
+		OrochiUtils::copyDtoH( dstValue.data(), dstGpu.value, testSize );
+
+		std::vector<u32> indexHelper( testSize );
+		std::iota( std::begin( indexHelper ), std::end( indexHelper ), 0U );
+
+		std::stable_sort( std::begin( indexHelper ), std::end( indexHelper ), [&]( const auto indexA, const auto indexB ) noexcept { return srcKey[indexA] < srcKey[indexB]; } );
+
+		const auto rearrange = []( auto& targetBuffer, const auto& indexBuffer ) noexcept
+		{
+			std::vector<u32> tmpBuffer( std::size( targetBuffer ) );
+
+			for( int i = 0; i < std::size( targetBuffer ); ++i )
+			{
+				tmpBuffer[i] = targetBuffer[indexBuffer[i]];
+			}
+
+			targetBuffer = std::move( tmpBuffer );
+		};
+
+		rearrange( srcKey, indexHelper );
+		rearrange( srcValue, indexHelper );
+
 		for( int i = 0; i < testSize; i++ )
 		{
-			if( dstKey[i] != srcKey[i] )
+			if( dstKey[i] != srcKey[i] || dstValue[i] != srcValue[i] )
 			{
-				printf( "fail\n" );
+				for( int j = ( i >= 5 ) ? i - 5 : 0; j < i + 5; ++j )
+				{
+					printf( "fail: [%d]: %d %d %d %d\n", j, dstKey[j], srcKey[j], dstValue[j], srcValue[j] );
+				}
+
 				__debugbreak();
 				break;
 			}
 		}
 
+		OrochiUtils::free( srcGpu.value );
+		OrochiUtils::free( dstGpu.value );
+
 		OrochiUtils::free( srcGpu.key );
 		OrochiUtils::free( dstGpu.key );
+
 		printf( "passed: %3.2fK keys\n", testSize / 1000.f );
 	}
 

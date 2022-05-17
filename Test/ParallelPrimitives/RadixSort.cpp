@@ -188,6 +188,7 @@ void RadixSort::sort( const KeyValueSoA src, const KeyValueSoA dst, int n, int s
 	if( s == &src )
 	{
 		OrochiUtils::copyDtoD( dst.key, src.key, n );
+		OrochiUtils::copyDtoD( dst.value, src.value, n );
 	}
 }
 

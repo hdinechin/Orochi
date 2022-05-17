@@ -310,7 +310,7 @@ __device__ void localSort4bitMultiRef( int* keys, u32* ldsKeys, const int START_
 }
 
 template<int N_ITEMS_PER_WI, int EXEC_WIDTH>
-__device__ void localSort4bitMulti( int* keys, u32* ldsKeys, const int START_BIT )
+__device__ void localSort4bitMulti( int* keys, u32* ldsKeys, int* values, u32* ldsValues, const int START_BIT )
 {
 	__shared__ union
 	{
@@ -362,12 +362,14 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, const int START_BIT
 		const int rank = lds.m_unpacked[threadIdx.x][packIdx][idx]++;
 
 		ldsKeys[offset + rank] = keys[i];
+		ldsValues[offset + rank] = values[i];
 	}
 	LDS_BARRIER;
 
 	for( int i = 0; i < N_ITEMS_PER_WI; ++i )
 	{
 		keys[i] = ldsKeys[threadIdx.x * N_ITEMS_PER_WI + i];
+		values[i] = ldsValues[threadIdx.x * N_ITEMS_PER_WI + i];
 	}
 }
 
@@ -499,10 +501,10 @@ __device__ void localSort8bitMulti_group( int* keys, u32* ldsKeys, const int STA
 }
 
 
-__device__ void localSort8bitMulti( int* keys, u32* ldsKeys, const int START_BIT )
+__device__ void localSort8bitMulti( int* keys, u32* ldsKeys, int* values, u32* ldsValues, const int START_BIT )
 {
-	localSort4bitMulti<SORT_N_ITEMS_PER_WI, SORT_WG_SIZE>( keys, ldsKeys, START_BIT );
-	if( N_RADIX > 4 ) localSort4bitMulti<SORT_N_ITEMS_PER_WI, SORT_WG_SIZE>( keys, ldsKeys, START_BIT + 4 );
+	localSort4bitMulti<SORT_N_ITEMS_PER_WI, SORT_WG_SIZE>( keys, ldsKeys, values, ldsValues, START_BIT );
+	if( N_RADIX > 4 ) localSort4bitMulti<SORT_N_ITEMS_PER_WI, SORT_WG_SIZE>( keys, ldsKeys, values, ldsValues, START_BIT + 4 );
 }
 
 
@@ -521,6 +523,7 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 	__shared__ u32 localOffsets[BIN_SIZE];
 
 	__shared__ u32 ldsKeys[SORT_WG_SIZE * SORT_N_ITEMS_PER_WI];
+	__shared__ u32 ldsValues[SORT_WG_SIZE * SORT_N_ITEMS_PER_WI];
 
 	__shared__ union
 	{
@@ -529,6 +532,7 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 	} lds;
 
 	int keys[SORT_N_ITEMS_PER_WI] = { 0 };
+	int values[SORT_N_ITEMS_PER_WI] = { 0 };
 
 	for( int i = threadIdx.x; i < BIN_SIZE; i += SORT_WG_SIZE )
 	{
@@ -542,6 +546,7 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 		{
 			const int idx = offset + i * SORT_WG_SIZE + threadIdx.x;
 			ldsKeys[i * SORT_WG_SIZE + threadIdx.x] = ( idx < gN ) ? gSrcKey[idx] : 0xffffffff;
+			ldsValues[i * SORT_WG_SIZE + threadIdx.x] = (idx < gN) ? gSrcVal[idx] : 0xffffffff;
 		}
 		LDS_BARRIER;
 
@@ -549,10 +554,11 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 		{
 			const int idx = threadIdx.x * SORT_N_ITEMS_PER_WI + i;
 			keys[i] = ldsKeys[idx];
+			values[i] = ldsValues[idx];
 		}
 
 		// local sort keys[];
-		localSort8bitMulti( keys, ldsKeys, START_BIT );
+		localSort8bitMulti( keys, ldsKeys, values, ldsValues, START_BIT );
 
 		for( int i = threadIdx.x; i < BIN_SIZE; i += SORT_WG_SIZE )
 		{
@@ -588,6 +594,7 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 			const int tableIdx = ( keys[i] >> START_BIT ) & RADIX_MASK;
 			const int dstIdx = localOffsets[tableIdx] + ( threadIdx.x * SORT_N_ITEMS_PER_WI + i ) - lds.histogram[0][tableIdx];
 			gDstKey[dstIdx] = keys[i];
+			gDstVal[dstIdx] = values[i];
 		}
 
 		LDS_BARRIER;
@@ -616,23 +623,28 @@ extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gSrcVal, int
 		return;
 	}
 
-	__shared__ u32 ldsKeys[SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI]; // todo. can be aliased
+	__shared__ u32 ldsKeys[SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI];
+	__shared__ u32 ldsValues[SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI];
 
 	int keys[SORT_N_ITEMS_PER_WI] = { 0 };
+	int values[SORT_N_ITEMS_PER_WI] = { 0 };
 
 	for( int i = 0; i < SINGLE_SORT_N_ITEMS_PER_WI; i++ )
 	{
 		const int idx = threadIdx.x * SINGLE_SORT_N_ITEMS_PER_WI + i;
 		keys[i] = ( idx < gN ) ? gSrcKey[idx] : 0xffffffff;
 		ldsKeys[idx] = keys[i];
+
+		values[i] = (idx < gN) ? gSrcVal[idx] : 0xffffffff;
+		ldsValues[idx] = values[i];
 	}
 
 	LDS_BARRIER;
 
 	for( int bit = START_BIT; bit < END_BIT; bit += N_RADIX )
 	{
-		localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, bit );
-		localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, bit + 4 );
+		localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, values, ldsValues, bit );
+		localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, values, ldsValues, bit + 4 );
 	}
 	for( int i = 0; i < SINGLE_SORT_N_ITEMS_PER_WI; i++ )
 	{
@@ -640,6 +652,7 @@ extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gSrcVal, int
 		if( idx < gN )
 		{
 			gDstKey[idx] = keys[i];
+			gDstVal[idx] = values[i];
 		}
 	}
 }
