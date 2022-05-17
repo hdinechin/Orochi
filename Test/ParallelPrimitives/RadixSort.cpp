@@ -42,31 +42,20 @@ void exclusiveScanCpu( int* countsGpu, int* offsetsGpu, const int nWGsToExecute 
 	OrochiUtils::waitForCompletion();
 }
 
+
+void printKernelInfo( oroFunction func )
+{
+	int a, b, c;
+	oroFuncGetAttribute( &a, ORO_FUNC_ATTRIBUTE_NUM_REGS, func );
+	oroFuncGetAttribute( &b, ORO_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, func );
+	oroFuncGetAttribute( &c, ORO_FUNC_ATTRIBUTE_CONST_SIZE_BYTES, func );
+	printf( "vgpr : shared = %d : %d : %d\n", a, b, c );
+}
+
 } // namespace
 
 namespace Oro
 {
-
-struct RadixSortImpl
-{
-	static void printKernelInfo( oroFunction func )
-	{
-		int a, b, c;
-		oroFuncGetAttribute( &a, ORO_FUNC_ATTRIBUTE_NUM_REGS, func );
-		oroFuncGetAttribute( &b, ORO_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, func );
-		oroFuncGetAttribute( &c, ORO_FUNC_ATTRIBUTE_CONST_SIZE_BYTES, func );
-		printf( "vgpr : shared = %d : %d : %d\n", a, b, c );
-	}
-	template<typename T>
-	static void swap( T& a, T& b )
-	{
-		T t = a;
-		a = b;
-		b = t;
-	}
-};
-
-using I = RadixSortImpl;
 
 RadixSort::RadixSort()
 {
@@ -96,30 +85,30 @@ void RadixSort::compileKernels( oroDevice device )
 	printf( "compiling kernels ... \n" );
 
 	std::vector<const char*> opts;
-//	opts.push_back( "--save-temps" );
+	//	opts.push_back( "--save-temps" );
 	opts.push_back( "-I ../" );
-//	opts.push_back( "-G" );
+	//	opts.push_back( "-G" );
 
 	oroFunctions[Kernel::COUNT] = OrochiUtils::getFunctionFromFile( device, kernelPath, "CountKernel", &opts );
-	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::COUNT] );
+	if( m_flags & FLAG_LOG ) printKernelInfo( oroFunctions[Kernel::COUNT] );
 
 	oroFunctions[Kernel::COUNT_REF] = OrochiUtils::getFunctionFromFile( device, kernelPath, "CountKernelReference", &opts );
-	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::COUNT_REF] );
+	if( m_flags & FLAG_LOG ) printKernelInfo( oroFunctions[Kernel::COUNT_REF] );
 
 	oroFunctions[Kernel::SCAN_SINGLE_WG] = OrochiUtils::getFunctionFromFile( device, kernelPath, "ParallelExclusiveScanSingleWG", &opts );
-	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::SCAN_SINGLE_WG] );
+	if( m_flags & FLAG_LOG ) printKernelInfo( oroFunctions[Kernel::SCAN_SINGLE_WG] );
 
 	oroFunctions[Kernel::SCAN_PARALLEL] = OrochiUtils::getFunctionFromFile( device, kernelPath, "ParallelExclusiveScanAllWG", &opts );
-	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::SCAN_PARALLEL] );
+	if( m_flags & FLAG_LOG ) printKernelInfo( oroFunctions[Kernel::SCAN_PARALLEL] );
 
 	oroFunctions[Kernel::SORT] = OrochiUtils::getFunctionFromFile( device, kernelPath, "SortKernel", &opts );
-	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::SORT] );
+	if( m_flags & FLAG_LOG ) printKernelInfo( oroFunctions[Kernel::SORT] );
 
 	oroFunctions[Kernel::SORT_REF] = OrochiUtils::getFunctionFromFile( device, kernelPath, "SortKernelReference", &opts );
-	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::SORT_REF] );
+	if( m_flags & FLAG_LOG ) printKernelInfo( oroFunctions[Kernel::SORT_REF] );
 
 	oroFunctions[Kernel::SORT_SINGLE_PASS] = OrochiUtils::getFunctionFromFile( device, kernelPath, "SortSinglePassKernel", &opts );
-	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::SORT_SINGLE_PASS] );
+	if( m_flags & FLAG_LOG ) printKernelInfo( oroFunctions[Kernel::SORT_SINGLE_PASS] );
 }
 
 int RadixSort::calculateWGsToExecute( oroDevice device ) noexcept
@@ -175,34 +164,34 @@ void RadixSort::configure( oroDevice device, u32& tempBufferSizeOut )
 }
 void RadixSort::setFlag( Flag flag ) { m_flags = flag; }
 
-void RadixSort::sort( u32* src, u32* dst, int n, int startBit, int endBit, u32* tempBuffer )
+void RadixSort::sort( const KeyValueSoA src, const KeyValueSoA dst, int n, int startBit, int endBit, u32* tempBuffer ) noexcept
 {
-	u32* s = src;
-	u32* d = dst;
-
-	if( n < SINGLE_SORT_WG_SIZE*SINGLE_SORT_N_ITEMS_PER_WI ) //todo. what's the optimal value for SINGLE_SORT_N_ITEMS_PER_WI? there should be a tipping point where single one is inefficient
-	{//todo. implement a single pass, single WG sort
-		const auto func =  oroFunctions[Kernel::SORT_SINGLE_PASS];
-		const void* args[] = { &src, &dst, &n, &startBit, &endBit };
+	if( n < SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI ) // todo. what's the optimal value for SINGLE_SORT_N_ITEMS_PER_WI? there should be a tipping point where single one is inefficient
+	{														   // todo. implement a single pass, single WG sort
+		const auto func = oroFunctions[Kernel::SORT_SINGLE_PASS];
+		const void* args[] = { &src.key, &src.value, &dst.key, &dst.value, &n, &startBit, &endBit };
 		OrochiUtils::launch1D( func, SINGLE_SORT_WG_SIZE, args, SINGLE_SORT_WG_SIZE );
 		OrochiUtils::waitForCompletion();
 		return;
 	}
 
+	auto* s{ &src };
+	auto* d{ &dst };
+
 	for( int i = startBit; i < endBit; i += N_RADIX )
 	{
-		sort1pass( s, d, n, i, i + std::min( N_RADIX, endBit - i ), (int*)tempBuffer );
+		sort1pass( *s, *d, n, i, i + std::min( N_RADIX, endBit - i ), (int*)tempBuffer );
 
-		I::swap( s, d );
+		std::swap( s, d );
 	}
 
-	if( s == src )
+	if( s == &src )
 	{
-		OrochiUtils::copyDtoD( dst, src, n );
+		OrochiUtils::copyDtoD( dst.key, src.key, n );
 	}
 }
 
-void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, int* temps )
+void RadixSort::sort1pass(const KeyValueSoA src, const KeyValueSoA dst, int n, int startBit, int endBit, int* temps ) noexcept
 {
 	constexpr bool reference = false;
 
@@ -229,9 +218,10 @@ void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, 
 	
 	float t[3] = {0.f};
 	{
-		Stopwatch sw; sw.start();
+		Stopwatch sw;
+		sw.start();
 		const auto func{ reference ? oroFunctions[Kernel::COUNT_REF] : oroFunctions[Kernel::COUNT] };
-		const void* args[] = { &src, &temps, &n, &nItemPerWG, &startBit, &m_nWGsToExecute };
+		const void* args[] = { &src.key, &temps, &n, &nItemPerWG, &startBit, &m_nWGsToExecute };
 		OrochiUtils::launch1D( func, COUNT_WG_SIZE * m_nWGsToExecute, args, COUNT_WG_SIZE );
 #if defined(PROFILE)
 		OrochiUtils::waitForCompletion();
@@ -241,7 +231,8 @@ void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, 
 	}
 
 	{
-		Stopwatch sw; sw.start();
+		Stopwatch sw;
+		sw.start();
 		switch( selectedScanAlgo )
 		{
 		case ScanAlgo::SCAN_CPU:
@@ -276,10 +267,11 @@ void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, 
 	}
 
 	{
-		Stopwatch sw; sw.start();
+		Stopwatch sw;
+		sw.start();
 		const auto func{ reference ? oroFunctions[Kernel::SORT_REF] : oroFunctions[Kernel::SORT] };
-		const void* args[] = { &src, &dst, &temps, &n, &nItemsPerWI, &startBit, &m_nWGsToExecute };
-		OrochiUtils::launch1D( func, SORT_WG_SIZE * m_nWGsToExecute, args, SORT_WG_SIZE);
+		const void* args[] = { &src.key, &src.value, &dst.key, &dst.value, &temps, &n, &nItemsPerWI, &startBit, &m_nWGsToExecute };
+		OrochiUtils::launch1D( func, SORT_WG_SIZE * m_nWGsToExecute, args, SORT_WG_SIZE );
 #if defined(PROFILE)
 		OrochiUtils::waitForCompletion();
 		sw.stop();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Orochi/Orochi.h>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 
@@ -10,7 +11,14 @@ namespace Oro
 class RadixSort
 {
   public:
-	typedef unsigned int u32;
+	using u32 = uint32_t;
+	using u64 = uint64_t;
+
+	struct KeyValueSoA
+	{
+		u32* key;
+		u32* value;
+	};
 
 	enum Flag
 	{
@@ -30,14 +38,14 @@ class RadixSort
 
 	void setFlag( Flag flag );
 
-	void sort( u32* src, u32* dst, int n, int startBit, int endBit, u32* tempBuffer );
+	void sort( const KeyValueSoA src, const KeyValueSoA dst, int n, int startBit, int endBit, u32* tempBuffer ) noexcept;
 
   private:
-	void sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, int* tmps );
+	void sort1pass(const KeyValueSoA src, const KeyValueSoA dst, int n, int startBit, int endBit, int* tmps ) noexcept;
 
 	void compileKernels( oroDevice device );
 
-	int calculateWGsToExecute(oroDevice device) noexcept;
+	int calculateWGsToExecute( oroDevice device ) noexcept;
 
   private:
 	int m_nWGsToExecute{ 4 };
