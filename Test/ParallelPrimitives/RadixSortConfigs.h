@@ -16,11 +16,13 @@ constexpr auto N_BINS_PACK_FACTOR{ sizeof( long long ) / sizeof( short ) };
 constexpr auto N_BINS_PACKED_4BIT{ N_BINS_4BIT / N_BINS_PACK_FACTOR };
 
 
+constexpr auto N_BINS_8BIT{ 1 << 8};
 // count config
 
 constexpr auto COUNT_WG_SIZE{ BIN_SIZE };
 
 // sort configs
+constexpr auto SORT_WG_SIZE{ 64 };
 constexpr auto SORT_N_ITEMS_PER_WI{ 12 };
 constexpr auto SINGLE_SORT_N_ITEMS_PER_WI{ 12 };
 constexpr auto SINGLE_SORT_WG_SIZE{ 128 };

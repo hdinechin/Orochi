@@ -166,7 +166,9 @@ int main(int argc, char** argv )
 	{
 		oroDeviceProp props;
 		oroGetDeviceProperties( &props, device );
-		printf( "executing on %s (%s), %d SIMDs\n", props.name, props.gcnArchName, props.multiProcessorCount );
+		int v;
+		oroDriverGetVersion( &v );
+		printf( "executing on %s (%s), %d SIMDs (driverVer.:%d)\n", props.name, props.gcnArchName, props.multiProcessorCount, v );
 	}
 
 	SortTest sort( device, ctx );
@@ -184,6 +186,11 @@ int main(int argc, char** argv )
 	case TEST_PERF:
 	{
 		const int nRuns = 4;
+		sort.test( 16 * 1000 * 10, testBits, nRuns );
+		sort.test( 16 * 1000 * 100, testBits, nRuns );
+		sort.test( 16 * 1000 * 1000, testBits, nRuns );
+		printf(">> testing 16 bit sort\n");
+		const int testBits = 16;
 		sort.test( 16 * 1000 * 10, testBits, nRuns );
 		sort.test( 16 * 1000 * 100, testBits, nRuns );
 		sort.test( 16 * 1000 * 1000, testBits, nRuns );
