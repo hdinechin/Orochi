@@ -2,6 +2,8 @@
 #include <Test/ParallelPrimitives/RadixSort.h>
 #include <Test/ParallelPrimitives/RadixSortConfigs.h>
 #include <numeric>
+#include <array>
+#include <algorithm>
 #include <Test/Stopwatch.h>
 
 //#define PROFILE 1
@@ -120,14 +122,44 @@ void RadixSort::compileKernels( oroDevice device )
 	if( m_flags & FLAG_LOG ) RadixSortImpl::printKernelInfo( oroFunctions[Kernel::SORT_SINGLE_PASS] );
 }
 
+int RadixSort::calculateWGsToExecute( oroDevice device ) noexcept
+{
+	oroDeviceProp props{};
+	oroGetDeviceProperties( &props, device );
+
+	constexpr auto maxWGSize = std::max( { COUNT_WG_SIZE, SCAN_WG_SIZE, SORT_WG_SIZE } );
+	const int warpSize = ( props.warpSize != 0 ) ? props.warpSize : 32;
+	const int warpPerWG = maxWGSize / warpSize;
+	const int warpPerWGP = props.maxThreadsPerMultiProcessor / warpSize;
+	const int occupancyFromWarp = ( warpPerWGP > 0 ) ? ( warpPerWGP / warpPerWG ) : 1;
+
+	constexpr std::array<Kernel, 3UL> selectedKernels{ Kernel::COUNT, Kernel::SCAN_PARALLEL, Kernel::SORT };
+
+	std::vector<int> sharedMemBytes( std::size( selectedKernels ) );
+	std::transform( std::cbegin( selectedKernels ), std::cend( selectedKernels ), std::begin( sharedMemBytes ),
+					[&]( const auto& kernel ) noexcept
+					{
+						int sharedMemory{ 0 };
+						const auto func = oroFunctions[kernel];
+						oroFuncGetAttribute( &sharedMemory, ORO_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, func );
+
+						return sharedMemory;
+					} );
+
+	const auto maxSharedMemory = std::max_element( std::cbegin( sharedMemBytes ), std::cend( sharedMemBytes ) );
+	const int occupancyFromLDS = ( maxSharedMemory != std::cend( sharedMemBytes ) && *maxSharedMemory > 0 ) ? props.sharedMemPerBlock / *maxSharedMemory : 1;
+
+	const int occupancy = std::min( occupancyFromLDS, occupancyFromWarp );
+
+	printf( "Occupancy: %d\n", occupancy );
+
+	return props.multiProcessorCount * occupancy;
+}
+
 void RadixSort::configure( oroDevice device, u32& tempBufferSizeOut )
 {
-	oroDeviceProp props;
-	oroGetDeviceProperties( &props, device );
-	const int occupancy = 8; // todo. change me
-
-	const auto newWGsToExecute{ props.multiProcessorCount * occupancy };
-
+	compileKernels( device );
+	const auto newWGsToExecute = calculateWGsToExecute( device );
 
 	if( newWGsToExecute != m_nWGsToExecute && selectedScanAlgo == ScanAlgo::SCAN_GPU_PARALLEL )
 	{
@@ -140,8 +172,6 @@ void RadixSort::configure( oroDevice device, u32& tempBufferSizeOut )
 
 	m_nWGsToExecute = newWGsToExecute;
 	tempBufferSizeOut = BIN_SIZE * m_nWGsToExecute;
-
-	compileKernels( device );
 }
 void RadixSort::setFlag( Flag flag ) { m_flags = flag; }
 
@@ -249,7 +279,7 @@ void RadixSort::sort1pass( u32* src, u32* dst, int n, int startBit, int endBit, 
 		Stopwatch sw; sw.start();
 		const auto func{ reference ? oroFunctions[Kernel::SORT_REF] : oroFunctions[Kernel::SORT] };
 		const void* args[] = { &src, &dst, &temps, &n, &nItemsPerWI, &startBit, &m_nWGsToExecute };
-		OrochiUtils::launch1D( func, WG_SIZE * m_nWGsToExecute, args, WG_SIZE );
+		OrochiUtils::launch1D( func, SORT_WG_SIZE * m_nWGsToExecute, args, SORT_WG_SIZE);
 #if defined(PROFILE)
 		OrochiUtils::waitForCompletion();
 		sw.stop();
