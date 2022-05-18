@@ -64,8 +64,13 @@ class SortTest
 
 	void test( int testSize, const int testBits = 32, const int nRuns = 1 )
 	{
-
 		srand( 123 );
+		Oro::RadixSort::KeyValueSoA srcGpu{};
+		Oro::RadixSort::KeyValueSoA dstGpu{};
+
+		OrochiUtils::malloc( srcGpu.key, testSize );
+		OrochiUtils::malloc( dstGpu.key, testSize );
+
 		std::vector<u32> srcKey( testSize );
 		for( int i = 0; i < testSize; i++ )
 		{
@@ -73,19 +78,16 @@ class SortTest
 		}
 
 		std::vector<u32> srcValue( testSize );
-		for( int i = 0; i < testSize; i++ )
+		if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
 		{
-			srcValue[i] = getRandom( 0u, (u32)( ( 1ull << (u64)testBits ) - 1 ) );
+			OrochiUtils::malloc( srcGpu.value, testSize );
+			OrochiUtils::malloc( dstGpu.value, testSize );
+
+			for( int i = 0; i < testSize; i++ )
+			{
+				srcValue[i] = getRandom( 0u, (u32)( ( 1ull << (u64)testBits ) - 1 ) );
+			}
 		}
-
-		Oro::RadixSort::KeyValueSoA srcGpu{};
-		Oro::RadixSort::KeyValueSoA dstGpu{};
-
-		OrochiUtils::malloc( srcGpu.key, testSize );
-		OrochiUtils::malloc( dstGpu.key, testSize );
-
-		OrochiUtils::malloc( srcGpu.value, testSize );
-		OrochiUtils::malloc( dstGpu.value, testSize );
 
 		Stopwatch sw;
 		for( int i = 0; i < nRuns; i++ )
@@ -93,11 +95,23 @@ class SortTest
 			OrochiUtils::copyHtoD( srcGpu.key, srcKey.data(), testSize );
 			OrochiUtils::waitForCompletion();
 
-			OrochiUtils::copyHtoD( srcGpu.value, srcValue.data(), testSize );
-			OrochiUtils::waitForCompletion();
+			if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+			{
+				OrochiUtils::copyHtoD( srcGpu.value, srcValue.data(), testSize );
+				OrochiUtils::waitForCompletion();
+			}
 
 			sw.start();
-			m_sort.sort( srcGpu, dstGpu, testSize, 0, testBits, m_tempBuffer );
+
+			if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+			{
+				m_sort.sort( srcGpu, dstGpu, testSize, 0, testBits, m_tempBuffer );
+			}
+			else
+			{
+				m_sort.sort( srcGpu.key, dstGpu.key, testSize, 0, testBits, m_tempBuffer );
+			}
+
 			OrochiUtils::waitForCompletion();
 			sw.stop();
 			float ms = sw.getMs();
@@ -109,7 +123,10 @@ class SortTest
 		OrochiUtils::copyDtoH( dstKey.data(), dstGpu.key, testSize );
 
 		std::vector<u32> dstValue( testSize );
-		OrochiUtils::copyDtoH( dstValue.data(), dstGpu.value, testSize );
+		if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+		{
+			OrochiUtils::copyDtoH( dstValue.data(), dstGpu.value, testSize );
+		}
 
 		std::vector<u32> indexHelper( testSize );
 		std::iota( std::begin( indexHelper ), std::end( indexHelper ), 0U );
@@ -129,24 +146,38 @@ class SortTest
 		};
 
 		rearrange( srcKey, indexHelper );
-		rearrange( srcValue, indexHelper );
+		if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+		{
+			rearrange( srcValue, indexHelper );
+		}
+
+		const auto check = [&]( const int i ) noexcept
+		{
+			if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+			{
+				return dstKey[i] != srcKey[i] || dstValue[i] != srcValue[i];
+			}
+			else
+			{
+				return dstKey[i] != srcKey[i];
+			}
+		};
 
 		for( int i = 0; i < testSize; i++ )
 		{
-			if( dstKey[i] != srcKey[i] || dstValue[i] != srcValue[i] )
+			if( check( i ) )
 			{
-				for( int j = ( i >= 5 ) ? i - 5 : 0; j < i + 5; ++j )
-				{
-					printf( "fail: [%d]: %d %d %d %d\n", j, dstKey[j], srcKey[j], dstValue[j], srcValue[j] );
-				}
-
+				printf( "fail at %d\n", i );
 				__debugbreak();
 				break;
 			}
 		}
 
-		OrochiUtils::free( srcGpu.value );
-		OrochiUtils::free( dstGpu.value );
+		if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+		{
+			OrochiUtils::free( srcGpu.value );
+			OrochiUtils::free( dstGpu.value );
+		}
 
 		OrochiUtils::free( srcGpu.key );
 		OrochiUtils::free( dstGpu.key );

@@ -328,14 +328,14 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, int* values, u32* l
 	for( int i = 0; i < N_ITEMS_PER_WI; ++i )
 	{
 		const int in4bit = ( keys[i] >> START_BIT ) & 0xf;
-		const int packIdx = in4bit/N_BINS_PACK_FACTOR;
+		const int packIdx = in4bit / N_BINS_PACK_FACTOR;
 		const int idx = in4bit % N_BINS_PACK_FACTOR;
 		lds.m_unpacked[threadIdx.x][packIdx][idx] += 1;
 	}
 
 	LDS_BARRIER;
 
-	for( int ii = 0; ii < N_BINS_PACKED_4BIT; ++ii)
+	for( int ii = 0; ii < N_BINS_PACKED_4BIT; ++ii )
 	{
 		ldsTemp[threadIdx.x] = lds.m_packed[threadIdx.x][ii];
 		LDS_BARRIER;
@@ -349,7 +349,7 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, int* values, u32* l
 	LDS_BARRIER;
 
 	auto* tmp = &lds.m_unpacked[EXEC_WIDTH][0][0];
-	ldsScanExclusive(tmp, N_BINS_PACKED_4BIT * N_BINS_PACK_FACTOR );
+	ldsScanExclusive( tmp, N_BINS_PACKED_4BIT * N_BINS_PACK_FACTOR );
 
 	LDS_BARRIER;
 
@@ -362,14 +362,22 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, int* values, u32* l
 		const int rank = lds.m_unpacked[threadIdx.x][packIdx][idx]++;
 
 		ldsKeys[offset + rank] = keys[i];
-		ldsValues[offset + rank] = values[i];
+
+		if constexpr( KEY_VALUE_PAIR_ENABLED )
+		{
+			ldsValues[offset + rank] = values[i];
+		}
 	}
 	LDS_BARRIER;
 
 	for( int i = 0; i < N_ITEMS_PER_WI; ++i )
 	{
 		keys[i] = ldsKeys[threadIdx.x * N_ITEMS_PER_WI + i];
-		values[i] = ldsValues[threadIdx.x * N_ITEMS_PER_WI + i];
+
+		if constexpr( KEY_VALUE_PAIR_ENABLED )
+		{
+			values[i] = ldsValues[threadIdx.x * N_ITEMS_PER_WI + i];
+		}
 	}
 }
 
@@ -523,7 +531,7 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 	__shared__ u32 localOffsets[BIN_SIZE];
 
 	__shared__ u32 ldsKeys[SORT_WG_SIZE * SORT_N_ITEMS_PER_WI];
-	__shared__ u32 ldsValues[SORT_WG_SIZE * SORT_N_ITEMS_PER_WI];
+	__shared__ u32 ldsValues[KEY_VALUE_PAIR_ENABLED ? SORT_WG_SIZE * SORT_N_ITEMS_PER_WI : 1];
 
 	__shared__ union
 	{
@@ -532,7 +540,7 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 	} lds;
 
 	int keys[SORT_N_ITEMS_PER_WI] = { 0 };
-	int values[SORT_N_ITEMS_PER_WI] = { 0 };
+	int values[KEY_VALUE_PAIR_ENABLED ? SORT_N_ITEMS_PER_WI : 1] = { 0 };
 
 	for( int i = threadIdx.x; i < BIN_SIZE; i += SORT_WG_SIZE )
 	{
@@ -546,7 +554,11 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 		{
 			const int idx = offset + i * SORT_WG_SIZE + threadIdx.x;
 			ldsKeys[i * SORT_WG_SIZE + threadIdx.x] = ( idx < gN ) ? gSrcKey[idx] : 0xffffffff;
-			ldsValues[i * SORT_WG_SIZE + threadIdx.x] = (idx < gN) ? gSrcVal[idx] : 0xffffffff;
+
+			if constexpr( KEY_VALUE_PAIR_ENABLED )
+			{
+				ldsValues[i * SORT_WG_SIZE + threadIdx.x] = ( idx < gN ) ? gSrcVal[idx] : 0xffffffff;
+			}
 		}
 		LDS_BARRIER;
 
@@ -554,11 +566,22 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 		{
 			const int idx = threadIdx.x * SORT_N_ITEMS_PER_WI + i;
 			keys[i] = ldsKeys[idx];
-			values[i] = ldsValues[idx];
+
+			if constexpr( KEY_VALUE_PAIR_ENABLED )
+			{
+				values[i] = ldsValues[idx];
+			}
 		}
 
 		// local sort keys[];
-		localSort8bitMulti( keys, ldsKeys, values, ldsValues, START_BIT );
+		if constexpr( KEY_VALUE_PAIR_ENABLED )
+		{
+			localSort8bitMulti( keys, ldsKeys, values, ldsValues, START_BIT );
+		}
+		else
+		{
+			localSort8bitMulti( keys, ldsKeys, nullptr, nullptr, START_BIT );
+		}
 
 		for( int i = threadIdx.x; i < BIN_SIZE; i += SORT_WG_SIZE )
 		{
@@ -594,7 +617,11 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 			const int tableIdx = ( keys[i] >> START_BIT ) & RADIX_MASK;
 			const int dstIdx = localOffsets[tableIdx] + ( threadIdx.x * SORT_N_ITEMS_PER_WI + i ) - lds.histogram[0][tableIdx];
 			gDstKey[dstIdx] = keys[i];
-			gDstVal[dstIdx] = values[i];
+
+			if constexpr( KEY_VALUE_PAIR_ENABLED )
+			{
+				gDstVal[dstIdx] = values[i];
+			}
 		}
 
 		LDS_BARRIER;
@@ -624,10 +651,10 @@ extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gSrcVal, int
 	}
 
 	__shared__ u32 ldsKeys[SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI];
-	__shared__ u32 ldsValues[SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI];
+	__shared__ u32 ldsValues[KEY_VALUE_PAIR_ENABLED ? SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI : 1];
 
-	int keys[SORT_N_ITEMS_PER_WI] = { 0 };
-	int values[SORT_N_ITEMS_PER_WI] = { 0 };
+	int keys[SINGLE_SORT_N_ITEMS_PER_WI] = { 0 };
+	int values[KEY_VALUE_PAIR_ENABLED ? SORT_N_ITEMS_PER_WI : 1] = { 0 };
 
 	for( int i = 0; i < SINGLE_SORT_N_ITEMS_PER_WI; i++ )
 	{
@@ -635,16 +662,27 @@ extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gSrcVal, int
 		keys[i] = ( idx < gN ) ? gSrcKey[idx] : 0xffffffff;
 		ldsKeys[idx] = keys[i];
 
-		values[i] = (idx < gN) ? gSrcVal[idx] : 0xffffffff;
-		ldsValues[idx] = values[i];
+		if constexpr( KEY_VALUE_PAIR_ENABLED )
+		{
+			values[i] = ( idx < gN ) ? gSrcVal[idx] : 0xffffffff;
+			ldsValues[idx] = values[i];
+		}
 	}
 
 	LDS_BARRIER;
 
 	for( int bit = START_BIT; bit < END_BIT; bit += N_RADIX )
 	{
-		localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, values, ldsValues, bit );
-		localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, values, ldsValues, bit + 4 );
+		if constexpr( KEY_VALUE_PAIR_ENABLED )
+		{
+			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, values, ldsValues, bit );
+			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, values, ldsValues, bit + 4 );
+		}
+		else
+		{
+			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, nullptr, nullptr, bit );
+			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, nullptr, nullptr, bit + 4 );
+		}
 	}
 	for( int i = 0; i < SINGLE_SORT_N_ITEMS_PER_WI; i++ )
 	{
@@ -652,7 +690,11 @@ extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gSrcVal, int
 		if( idx < gN )
 		{
 			gDstKey[idx] = keys[i];
-			gDstVal[idx] = values[i];
+
+			if constexpr( KEY_VALUE_PAIR_ENABLED )
+			{
+				gDstVal[idx] = values[i];
+			}
 		}
 	}
 }
