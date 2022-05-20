@@ -591,7 +591,7 @@ __device__ void SortSinglePass( int* gSrcKey, int* gSrcVal, int* gDstKey, int* g
 	__shared__ u32 ldsValues[KEY_VALUE_PAIR ? SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI : 1];
 
 	int keys[SINGLE_SORT_N_ITEMS_PER_WI] = { 0 };
-	int values[KEY_VALUE_PAIR ? SORT_N_ITEMS_PER_WI : 1] = { 0 };
+	int values[KEY_VALUE_PAIR ? SINGLE_SORT_N_ITEMS_PER_WI : 1] = { 0 };
 
 	for( int i = 0; i < SINGLE_SORT_N_ITEMS_PER_WI; i++ )
 	{
