@@ -284,6 +284,7 @@ oroError OROAPI oroGetDeviceProperties(oroDeviceProp* props, oroDevice dev)
 		props->pciDomainID = p.pciDomainID;
 		props->pciBusID = p.pciBusID;
 		props->pciDeviceID = p.pciDeviceID;
+		props->maxThreadsPerMultiProcessor = p.maxThreadsPerMultiProcessor;
 
 		return oroSuccess;
 	}

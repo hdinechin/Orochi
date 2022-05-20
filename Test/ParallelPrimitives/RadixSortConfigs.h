@@ -23,7 +23,7 @@ constexpr auto COUNT_WG_SIZE{ BIN_SIZE };
 // sort configs
 constexpr auto SORT_WG_SIZE{ 64 };
 constexpr auto SORT_N_ITEMS_PER_WI{ 12 };
-constexpr auto SINGLE_SORT_N_ITEMS_PER_WI{ 12 };
+constexpr auto SINGLE_SORT_N_ITEMS_PER_WI{ 24 };
 constexpr auto SINGLE_SORT_WG_SIZE{ 128 };
 
 // scan configs

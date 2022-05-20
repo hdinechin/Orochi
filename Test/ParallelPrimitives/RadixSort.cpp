@@ -140,7 +140,7 @@ int RadixSort::calculateWGsToExecute( oroDevice device ) noexcept
 
 	const int occupancy = std::min( occupancyFromLDS, occupancyFromWarp );
 
-	printf( "Occupancy: %d\n", occupancy );
+	if( m_flags & FLAG_LOG ) printf( "Occupancy: %d\n", occupancy );
 
 	return props.multiProcessorCount * occupancy;
 }
@@ -166,8 +166,8 @@ void RadixSort::setFlag( Flag flag ) { m_flags = flag; }
 
 void RadixSort::sort( const KeyValueSoA src, const KeyValueSoA dst, int n, int startBit, int endBit, u32* tempBuffer ) noexcept
 {
-	// todo. what's the optimal value for SINGLE_SORT_N_ITEMS_PER_WI? there should be a tipping point where single one is inefficient
-	// todo. implement a single pass, single WG sort
+	// todo. better to compute SINGLE_SORT_N_ITEMS_PER_WI which we use in the kernel dynamically rather than hard coding it to distribute the work evenly
+	// right now, setting this as large as possible is faster than multi pass sorting
 	if( n < SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI )
 	{
 		const auto func = oroFunctions[Kernel::SORT_SINGLE_PASS_KV];
@@ -195,8 +195,8 @@ void RadixSort::sort( const KeyValueSoA src, const KeyValueSoA dst, int n, int s
 
 void RadixSort::sort( const u32* src, const u32* dst, int n, int startBit, int endBit, u32* tempBuffer ) noexcept
 {
-	// todo. what's the optimal value for SINGLE_SORT_N_ITEMS_PER_WI? there should be a tipping point where single one is inefficient
-	// todo. implement a single pass, single WG sort
+	// todo. better to compute SINGLE_SORT_N_ITEMS_PER_WI which we use in the kernel dynamically rather than hard coding it to distribute the work evenly
+	// right now, setting this as large as possible is faster than multi pass sorting
 	if( n < SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI )
 	{
 		const auto func = oroFunctions[Kernel::SORT_SINGLE_PASS];
