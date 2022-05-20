@@ -62,6 +62,7 @@ class SortTest
 
 	~SortTest() { OrochiUtils::free( m_tempBuffer ); }
 
+	template<bool KEY_VALUE_PAIR = true>
 	void test( int testSize, const int testBits = 32, const int nRuns = 1 )
 	{
 		srand( 123 );
@@ -78,7 +79,7 @@ class SortTest
 		}
 
 		std::vector<u32> srcValue( testSize );
-		if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+		if constexpr( KEY_VALUE_PAIR )
 		{
 			OrochiUtils::malloc( srcGpu.value, testSize );
 			OrochiUtils::malloc( dstGpu.value, testSize );
@@ -95,7 +96,7 @@ class SortTest
 			OrochiUtils::copyHtoD( srcGpu.key, srcKey.data(), testSize );
 			OrochiUtils::waitForCompletion();
 
-			if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+			if constexpr( KEY_VALUE_PAIR )
 			{
 				OrochiUtils::copyHtoD( srcGpu.value, srcValue.data(), testSize );
 				OrochiUtils::waitForCompletion();
@@ -103,7 +104,7 @@ class SortTest
 
 			sw.start();
 
-			if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+			if constexpr( KEY_VALUE_PAIR )
 			{
 				m_sort.sort( srcGpu, dstGpu, testSize, 0, testBits, m_tempBuffer );
 			}
@@ -116,14 +117,14 @@ class SortTest
 			sw.stop();
 			float ms = sw.getMs();
 			float gKeys_s = testSize / 1000.f / 1000.f / ms;
-			printf( "%3.2fms (%3.2fGKeys/s) sorting %3.1fMkeys\n", ms, gKeys_s, testSize / 1000.f / 1000.f );
+			printf( "%3.2fms (%3.2fGKeys/s) sorting %3.1fMkeys [%s]\n", ms, gKeys_s, testSize / 1000.f / 1000.f, KEY_VALUE_PAIR? "keyValue":"keyOnly" );
 		}
 
 		std::vector<u32> dstKey( testSize );
 		OrochiUtils::copyDtoH( dstKey.data(), dstGpu.key, testSize );
 
 		std::vector<u32> dstValue( testSize );
-		if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+		if constexpr( KEY_VALUE_PAIR )
 		{
 			OrochiUtils::copyDtoH( dstValue.data(), dstGpu.value, testSize );
 		}
@@ -146,14 +147,14 @@ class SortTest
 		};
 
 		rearrange( srcKey, indexHelper );
-		if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+		if constexpr( KEY_VALUE_PAIR )
 		{
 			rearrange( srcValue, indexHelper );
 		}
 
 		const auto check = [&]( const int i ) noexcept
 		{
-			if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+			if constexpr( KEY_VALUE_PAIR )
 			{
 				return dstKey[i] != srcKey[i] || dstValue[i] != srcValue[i];
 			}
@@ -173,7 +174,7 @@ class SortTest
 			}
 		}
 
-		if constexpr( Oro::KEY_VALUE_PAIR_ENABLED )
+		if constexpr( KEY_VALUE_PAIR )
 		{
 			OrochiUtils::free( srcGpu.value );
 			OrochiUtils::free( dstGpu.value );
@@ -244,6 +245,7 @@ int main( int argc, char** argv )
 	{
 	case TEST_SINGLE:
 	{
+		sort.test<false>( 128 * 10, testBits, 10 );
 		sort.test( 128 * 10, testBits, 10 );
 	}
 	break;
@@ -256,6 +258,10 @@ int main( int argc, char** argv )
 		sort.test( 16 * 1000 * 10, testBits, nRuns );
 		sort.test( 16 * 1000 * 100, testBits, nRuns );
 		sort.test( 16 * 1000 * 1000, testBits, nRuns );
+
+		sort.test<false>( 16 * 1000 * 10, testBits, nRuns );
+		sort.test<false>( 16 * 1000 * 100, testBits, nRuns );
+		sort.test<false>( 16 * 1000 * 1000, testBits, nRuns );
 		printf( ">> testing 16 bit sort\n" );
 		const int testBits = 16;
 		sort.test( 16 * 1000 * 10, testBits, nRuns );

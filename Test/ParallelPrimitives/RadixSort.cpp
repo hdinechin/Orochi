@@ -106,6 +106,9 @@ void RadixSort::compileKernels( oroDevice device )
 
 	oroFunctions[Kernel::SORT_SINGLE_PASS] = OrochiUtils::getFunctionFromFile( device, kernelPath, "SortSinglePassKernel", &opts );
 	if( m_flags & FLAG_LOG ) printKernelInfo( oroFunctions[Kernel::SORT_SINGLE_PASS] );
+
+	oroFunctions[Kernel::SORT_SINGLE_PASS_KV] = OrochiUtils::getFunctionFromFile( device, kernelPath, "SortSinglePassKVKernel", &opts );
+	if( m_flags & FLAG_LOG ) printKernelInfo( oroFunctions[Kernel::SORT_SINGLE_PASS_KV] );
 }
 
 int RadixSort::calculateWGsToExecute( oroDevice device ) noexcept
@@ -167,10 +170,9 @@ void RadixSort::sort( const KeyValueSoA src, const KeyValueSoA dst, int n, int s
 	// todo. implement a single pass, single WG sort
 	if( n < SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI )
 	{
-		const auto func = oroFunctions[Kernel::SORT_SINGLE_PASS];
+		const auto func = oroFunctions[Kernel::SORT_SINGLE_PASS_KV];
 		const void* args[] = { &src.key, &src.value, &dst.key, &dst.value, &n, &startBit, &endBit };
 		OrochiUtils::launch1D( func, SINGLE_SORT_WG_SIZE, args, SINGLE_SORT_WG_SIZE );
-		OrochiUtils::waitForCompletion();
 		return;
 	}
 
@@ -199,9 +201,8 @@ void RadixSort::sort( const u32* src, const u32* dst, int n, int startBit, int e
 	{
 		const auto func = oroFunctions[Kernel::SORT_SINGLE_PASS];
 		u32* placeholder = nullptr;
-		const void* args[] = { &src, &placeholder, &dst, &placeholder, &n, &startBit, &endBit };
+		const void* args[] = { &src, &dst, &n, &startBit, &endBit };
 		OrochiUtils::launch1D( func, SINGLE_SORT_WG_SIZE, args, SINGLE_SORT_WG_SIZE );
-		OrochiUtils::waitForCompletion();
 		return;
 	}
 

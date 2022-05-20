@@ -309,7 +309,7 @@ __device__ void localSort4bitMultiRef( int* keys, u32* ldsKeys, const int START_
 	}
 }
 
-template<int N_ITEMS_PER_WI, int EXEC_WIDTH>
+template<int N_ITEMS_PER_WI, int EXEC_WIDTH, bool KEY_VALUE_PAIR=true>
 __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, int* values, u32* ldsValues, const int START_BIT )
 {
 	__shared__ union
@@ -363,7 +363,7 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, int* values, u32* l
 
 		ldsKeys[offset + rank] = keys[i];
 
-		if constexpr( KEY_VALUE_PAIR_ENABLED )
+		if constexpr( KEY_VALUE_PAIR )
 		{
 			ldsValues[offset + rank] = values[i];
 		}
@@ -374,7 +374,7 @@ __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, int* values, u32* l
 	{
 		keys[i] = ldsKeys[threadIdx.x * N_ITEMS_PER_WI + i];
 
-		if constexpr( KEY_VALUE_PAIR_ENABLED )
+		if constexpr( KEY_VALUE_PAIR )
 		{
 			values[i] = ldsValues[threadIdx.x * N_ITEMS_PER_WI + i];
 		}
@@ -640,7 +640,8 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 	}
 }
 
-extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gSrcVal, int* gDstKey, int* gDstVal, int gN, const int START_BIT, const int END_BIT )
+template<bool KEY_VALUE_PAIR>
+__device__ void SortSinglePass( int* gSrcKey, int* gSrcVal, int* gDstKey, int* gDstVal, int gN, const int START_BIT, const int END_BIT )
 {
 	const int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
 	const int wgIdx = blockIdx.x;
@@ -651,10 +652,10 @@ extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gSrcVal, int
 	}
 
 	__shared__ u32 ldsKeys[SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI];
-	__shared__ u32 ldsValues[KEY_VALUE_PAIR_ENABLED ? SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI : 1];
+	__shared__ u32 ldsValues[KEY_VALUE_PAIR ? SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI : 1];
 
 	int keys[SINGLE_SORT_N_ITEMS_PER_WI] = { 0 };
-	int values[KEY_VALUE_PAIR_ENABLED ? SORT_N_ITEMS_PER_WI : 1] = { 0 };
+	int values[KEY_VALUE_PAIR ? SORT_N_ITEMS_PER_WI : 1] = { 0 };
 
 	for( int i = 0; i < SINGLE_SORT_N_ITEMS_PER_WI; i++ )
 	{
@@ -662,7 +663,7 @@ extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gSrcVal, int
 		keys[i] = ( idx < gN ) ? gSrcKey[idx] : 0xffffffff;
 		ldsKeys[idx] = keys[i];
 
-		if constexpr( KEY_VALUE_PAIR_ENABLED )
+		if constexpr( KEY_VALUE_PAIR )
 		{
 			values[i] = ( idx < gN ) ? gSrcVal[idx] : 0xffffffff;
 			ldsValues[idx] = values[i];
@@ -673,15 +674,15 @@ extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gSrcVal, int
 
 	for( int bit = START_BIT; bit < END_BIT; bit += N_RADIX )
 	{
-		if constexpr( KEY_VALUE_PAIR_ENABLED )
+		if constexpr( KEY_VALUE_PAIR )
 		{
-			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, values, ldsValues, bit );
-			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, values, ldsValues, bit + 4 );
+			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE, KEY_VALUE_PAIR>( keys, ldsKeys, values, ldsValues, bit );
+			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE, KEY_VALUE_PAIR>( keys, ldsKeys, values, ldsValues, bit + 4 );
 		}
 		else
 		{
-			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, nullptr, nullptr, bit );
-			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE>( keys, ldsKeys, nullptr, nullptr, bit + 4 );
+			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE, KEY_VALUE_PAIR>( keys, ldsKeys, nullptr, nullptr, bit );
+			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE, KEY_VALUE_PAIR>( keys, ldsKeys, nullptr, nullptr, bit + 4 );
 		}
 	}
 	for( int i = 0; i < SINGLE_SORT_N_ITEMS_PER_WI; i++ )
@@ -691,12 +692,22 @@ extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gSrcVal, int
 		{
 			gDstKey[idx] = keys[i];
 
-			if constexpr( KEY_VALUE_PAIR_ENABLED )
+			if constexpr( KEY_VALUE_PAIR )
 			{
 				gDstVal[idx] = values[i];
 			}
 		}
 	}
+}
+
+extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gDstKey, int gN, const int START_BIT, const int END_BIT )
+{ 
+	SortSinglePass<false>( gSrcKey, 0, gDstKey, 0, gN, START_BIT, END_BIT );
+}
+
+extern "C" __global__ void SortSinglePassKVKernel( int* gSrcKey, int* gSrcVal, int* gDstKey, int* gDstVal, int gN, const int START_BIT, const int END_BIT )
+{ 
+	SortSinglePass<true>( gSrcKey, gSrcVal, gDstKey, gDstVal, gN, START_BIT, END_BIT ); 
 }
 
 
