@@ -117,7 +117,7 @@ class SortTest
 			sw.stop();
 			float ms = sw.getMs();
 			float gKeys_s = static_cast<float>(testSize) / 1000.f / 1000.f / ms;
-			printf( "%3.2fms (%3.2fGKeys/s) sorting %3.1fMkeys [%s]\n", ms, gKeys_s, testSize / 1000.f / 1000.f, KEY_VALUE_PAIR? "keyValue":"keyOnly" );
+			printf( "%5.2fms (%3.2fGKeys/s) sorting %3.1fMkeys [%s]\n", ms, gKeys_s, testSize / 1000.f / 1000.f, KEY_VALUE_PAIR? "keyValue":"key" );
 		}
 
 		std::vector<u32> dstKey( testSize );
@@ -270,6 +270,10 @@ int main( int argc, char** argv )
 		sort.test( 16 * 1000 * 10, testBits, nRuns );
 		sort.test( 16 * 1000 * 100, testBits, nRuns );
 		sort.test( 16 * 1000 * 1000, testBits, nRuns );
+
+		sort.test<false>( 16 * 1000 * 10, testBits, nRuns );
+		sort.test<false>( 16 * 1000 * 100, testBits, nRuns );
+		sort.test<false>( 16 * 1000 * 1000, testBits, nRuns );
 	}
 	break;
 	case TEST_BITS:
