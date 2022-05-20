@@ -11,29 +11,27 @@ typedef unsigned long long u64;
 
 #define THE_FIRST_THREAD threadIdx.x == 0 && blockIdx.x == 0
 
-extern "C"
-__global__ void CountKernelReference( int* gSrc, int* gDst, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
+extern "C" __global__ void CountKernelReference( int* gSrc, int* gDst, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
 {
-	
+
 	const int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
 
 	const int offset = blockIdx.x * blockDim.x * gNItemsPerWI;
 
-	int table[BIN_SIZE] = {0};
+	int table[BIN_SIZE] = { 0 };
 
-	for( int i = 0; i < gNItemsPerWI; i++)
+	for( int i = 0; i < gNItemsPerWI; i++ )
 	{
 		int idx = offset + threadIdx.x * gNItemsPerWI + i;
 
-		if( idx >= gN )
-			continue;
+		if( idx >= gN ) continue;
 		int tableIdx = ( gSrc[idx] >> START_BIT ) & RADIX_MASK;
-		table[tableIdx] ++;
+		table[tableIdx]++;
 	}
-	
+
 	const int wgIdx = blockIdx.x;
 
-	for(int i=0; i<BIN_SIZE; i++)
+	for( int i = 0; i < BIN_SIZE; i++ )
 	{
 		if( table[i] != 0 )
 		{
@@ -42,47 +40,7 @@ __global__ void CountKernelReference( int* gSrc, int* gDst, int gN, int gNItemsP
 	}
 }
 
-extern "C" 
-__global__ void SortKernelReference( int* gSrc, int* gDst, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
-{
-	const int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
-	const int offset = blockIdx.x * blockDim.x * gNItemsPerWI;
-	const int wgIdx = blockIdx.x;
-
-	__shared__ int lds[WG_SIZE];
-	__shared__ int localHistogram[BIN_SIZE];
-	__shared__ int localOffsets[BIN_SIZE];
-
-	for(int i=threadIdx.x; i<BIN_SIZE; i+=WG_SIZE)
-	{
-		localOffsets[i] = gHistogram[i * N_WGS_EXECUTED + wgIdx ];
-	}
-	LDS_BARRIER;
-
-	for( int i = 0; i < gNItemsPerWI; i++ )
-	{
-		int idx = offset + threadIdx.x * gNItemsPerWI + i;
-
-		int key;
-		int tableIdx;
-		if( idx < gN )
-		{
-			key = gSrc[idx];
-			tableIdx = ( key >> START_BIT ) & RADIX_MASK;
-		}
-
-		LDS_BARRIER;
-		if( idx < gN )
-		{
-			int dstIdx = atomicAdd( &localOffsets[tableIdx], 1 );
-			gDst[dstIdx] = key;
-		}
-	}
-}
-
-
 //=====
-
 
 extern "C" __global__ void CountKernel( int* gSrc, int* gDst, int gN, int gNItemsPerWG, const int START_BIT, const int N_WGS_EXECUTED )
 {
@@ -111,8 +69,6 @@ extern "C" __global__ void CountKernel( int* gSrc, int* gDst, int gN, int gNItem
 	gDst[threadIdx.x * N_WGS_EXECUTED + blockIdx.x] = table[threadIdx.x];
 }
 
-
-
 template<typename T, int STRIDE>
 struct ScanImpl
 {
@@ -120,22 +76,18 @@ struct ScanImpl
 	{
 		T b = __shfl( a, threadIdx.x - STRIDE );
 		if( threadIdx.x >= STRIDE ) a += b;
-		return ScanImpl<T,STRIDE * 2>::exec( a );
+		return ScanImpl<T, STRIDE * 2>::exec( a );
 	}
 };
 
 template<typename T>
-struct ScanImpl<T,WG_SIZE>
+struct ScanImpl<T, WG_SIZE>
 {
-	__device__ static T exec( T a )
-	{
-		return a;
-	}
+	__device__ static T exec( T a ) { return a; }
 };
 
 template<typename T>
-__device__ 
-void waveScanInclusive( T& a, int width ) 
+__device__ void waveScanInclusive( T& a, int width )
 {
 #if 0
 	a = ScanImpl<T, 1>::exec( a );
@@ -153,8 +105,8 @@ __device__ T waveScanExclusive( T& a, int width )
 {
 	waveScanInclusive( a, width );
 
-	T sum = __shfl( a, width-1 );
-	a = __shfl( a, threadIdx.x-1 );
+	T sum = __shfl( a, width - 1 );
+	a = __shfl( a, threadIdx.x - 1 );
 	if( threadIdx.x == 0 ) a = 0;
 
 	return sum;
@@ -269,7 +221,7 @@ __device__ void localSort4bitMultiRef( int* keys, u32* ldsKeys, const int START_
 
 	LDS_BARRIER;
 
-	if( threadIdx.x < N_BINS_4BIT )//16 scans, pack 4 scans into 1 to make 4 parallel scans
+	if( threadIdx.x < N_BINS_4BIT ) // 16 scans, pack 4 scans into 1 to make 4 parallel scans
 	{
 		int sum = 0;
 		for( int i = 0; i < WG_SIZE; i++ )
@@ -281,7 +233,7 @@ __device__ void localSort4bitMultiRef( int* keys, u32* ldsKeys, const int START_
 		ldsTemp[WG_SIZE][threadIdx.x] = sum;
 	}
 	LDS_BARRIER;
-	if( threadIdx.x == 0 )//todo parallel scan
+	if( threadIdx.x == 0 ) // todo parallel scan
 	{
 		int sum = 0;
 		for( int i = 0; i < N_BINS_4BIT; i++ )
@@ -309,7 +261,7 @@ __device__ void localSort4bitMultiRef( int* keys, u32* ldsKeys, const int START_
 	}
 }
 
-template<int N_ITEMS_PER_WI, int EXEC_WIDTH, bool KEY_VALUE_PAIR=true>
+template<int N_ITEMS_PER_WI, int EXEC_WIDTH, bool KEY_VALUE_PAIR = true>
 __device__ void localSort4bitMulti( int* keys, u32* ldsKeys, int* values, u32* ldsValues, const int START_BIT )
 {
 	__shared__ union
@@ -465,7 +417,7 @@ __device__ void localSort8bitMulti_group( int* keys, u32* ldsKeys, const int STA
 
 	LDS_BARRIER;
 
-	for( int groupId = threadIdx.x; groupId < N_GROUP_SIZE; groupId += SORT_WG_SIZE)
+	for( int groupId = threadIdx.x; groupId < N_GROUP_SIZE; groupId += SORT_WG_SIZE )
 	{
 		u64 sum = 0U;
 		for( int i = 0; i < SORT_WG_SIZE; i++ )
@@ -508,30 +460,25 @@ __device__ void localSort8bitMulti_group( int* keys, u32* ldsKeys, const int STA
 	}
 }
 
-
+template<bool KEY_VALUE_PAIR>
 __device__ void localSort8bitMulti( int* keys, u32* ldsKeys, int* values, u32* ldsValues, const int START_BIT )
 {
-	localSort4bitMulti<SORT_N_ITEMS_PER_WI, SORT_WG_SIZE>( keys, ldsKeys, values, ldsValues, START_BIT );
-	if( N_RADIX > 4 ) localSort4bitMulti<SORT_N_ITEMS_PER_WI, SORT_WG_SIZE>( keys, ldsKeys, values, ldsValues, START_BIT + 4 );
+	localSort4bitMulti<SORT_N_ITEMS_PER_WI, SORT_WG_SIZE, KEY_VALUE_PAIR>( keys, ldsKeys, values, ldsValues, START_BIT );
+	if( N_RADIX > 4 ) localSort4bitMulti<SORT_N_ITEMS_PER_WI, SORT_WG_SIZE, KEY_VALUE_PAIR>( keys, ldsKeys, values, ldsValues, START_BIT + 4 );
 }
 
-
-extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey, int* gDstVal, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
+template<bool KEY_VALUE_PAIR>
+__device__ void SortImpl( int* gSrcKey, int* gSrcVal, int* gDstKey, int* gDstVal, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
 {
-
 	int offset = blockIdx.x * blockDim.x * gNItemsPerWI;
 	if( offset > gN )
 	{
 		return;
 	}
 
-	const int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
-	const int wgIdx = blockIdx.x;
-
 	__shared__ u32 localOffsets[BIN_SIZE];
-
 	__shared__ u32 ldsKeys[SORT_WG_SIZE * SORT_N_ITEMS_PER_WI];
-	__shared__ u32 ldsValues[KEY_VALUE_PAIR_ENABLED ? SORT_WG_SIZE * SORT_N_ITEMS_PER_WI : 1];
+	__shared__ u32 ldsValues[KEY_VALUE_PAIR ? SORT_WG_SIZE * SORT_N_ITEMS_PER_WI : 1];
 
 	__shared__ union
 	{
@@ -540,11 +487,11 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 	} lds;
 
 	int keys[SORT_N_ITEMS_PER_WI] = { 0 };
-	int values[KEY_VALUE_PAIR_ENABLED ? SORT_N_ITEMS_PER_WI : 1] = { 0 };
+	int values[KEY_VALUE_PAIR ? SORT_N_ITEMS_PER_WI : 1] = { 0 };
 
 	for( int i = threadIdx.x; i < BIN_SIZE; i += SORT_WG_SIZE )
 	{
-		localOffsets[i] = gHistogram[i * N_WGS_EXECUTED + wgIdx];
+		localOffsets[i] = gHistogram[i * N_WGS_EXECUTED + blockIdx.x];
 	}
 	LDS_BARRIER;
 
@@ -555,7 +502,7 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 			const int idx = offset + i * SORT_WG_SIZE + threadIdx.x;
 			ldsKeys[i * SORT_WG_SIZE + threadIdx.x] = ( idx < gN ) ? gSrcKey[idx] : 0xffffffff;
 
-			if constexpr( KEY_VALUE_PAIR_ENABLED )
+			if constexpr( KEY_VALUE_PAIR )
 			{
 				ldsValues[i * SORT_WG_SIZE + threadIdx.x] = ( idx < gN ) ? gSrcVal[idx] : 0xffffffff;
 			}
@@ -567,21 +514,13 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 			const int idx = threadIdx.x * SORT_N_ITEMS_PER_WI + i;
 			keys[i] = ldsKeys[idx];
 
-			if constexpr( KEY_VALUE_PAIR_ENABLED )
+			if constexpr( KEY_VALUE_PAIR )
 			{
 				values[i] = ldsValues[idx];
 			}
 		}
 
-		// local sort keys[];
-		if constexpr( KEY_VALUE_PAIR_ENABLED )
-		{
-			localSort8bitMulti( keys, ldsKeys, values, ldsValues, START_BIT );
-		}
-		else
-		{
-			localSort8bitMulti( keys, ldsKeys, nullptr, nullptr, START_BIT );
-		}
+		localSort8bitMulti<KEY_VALUE_PAIR>( keys, ldsKeys, values, ldsValues, START_BIT );
 
 		for( int i = threadIdx.x; i < BIN_SIZE; i += SORT_WG_SIZE )
 		{
@@ -618,7 +557,7 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 			const int dstIdx = localOffsets[tableIdx] + ( threadIdx.x * SORT_N_ITEMS_PER_WI + i ) - lds.histogram[0][tableIdx];
 			gDstKey[dstIdx] = keys[i];
 
-			if constexpr( KEY_VALUE_PAIR_ENABLED )
+			if constexpr( KEY_VALUE_PAIR )
 			{
 				gDstVal[dstIdx] = values[i];
 			}
@@ -643,10 +582,7 @@ extern "C" __global__ void SortKernel( int* gSrcKey, int* gSrcVal, int* gDstKey,
 template<bool KEY_VALUE_PAIR>
 __device__ void SortSinglePass( int* gSrcKey, int* gSrcVal, int* gDstKey, int* gDstVal, int gN, const int START_BIT, const int END_BIT )
 {
-	const int gIdx = blockIdx.x * blockDim.x + threadIdx.x;
-	const int wgIdx = blockIdx.x;
-
-	if( wgIdx > 0 )
+	if( blockIdx.x > 0 )
 	{
 		return;
 	}
@@ -674,17 +610,10 @@ __device__ void SortSinglePass( int* gSrcKey, int* gSrcVal, int* gDstKey, int* g
 
 	for( int bit = START_BIT; bit < END_BIT; bit += N_RADIX )
 	{
-		if constexpr( KEY_VALUE_PAIR )
-		{
-			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE, KEY_VALUE_PAIR>( keys, ldsKeys, values, ldsValues, bit );
-			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE, KEY_VALUE_PAIR>( keys, ldsKeys, values, ldsValues, bit + 4 );
-		}
-		else
-		{
-			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE, KEY_VALUE_PAIR>( keys, ldsKeys, nullptr, nullptr, bit );
-			localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE, KEY_VALUE_PAIR>( keys, ldsKeys, nullptr, nullptr, bit + 4 );
-		}
+		localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE, KEY_VALUE_PAIR>( keys, ldsKeys, values, ldsValues, bit );
+		localSort4bitMulti<SINGLE_SORT_N_ITEMS_PER_WI, SINGLE_SORT_WG_SIZE, KEY_VALUE_PAIR>( keys, ldsKeys, values, ldsValues, bit + 4 );
 	}
+
 	for( int i = 0; i < SINGLE_SORT_N_ITEMS_PER_WI; i++ )
 	{
 		const int idx = threadIdx.x * SINGLE_SORT_N_ITEMS_PER_WI + i;
@@ -700,16 +629,25 @@ __device__ void SortSinglePass( int* gSrcKey, int* gSrcVal, int* gDstKey, int* g
 	}
 }
 
-extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gDstKey, int gN, const int START_BIT, const int END_BIT )
-{ 
-	SortSinglePass<false>( gSrcKey, 0, gDstKey, 0, gN, START_BIT, END_BIT );
+extern "C" __global__ void SortSinglePassKernel( int* gSrcKey, int* gDstKey, int gN, const int START_BIT, const int END_BIT ) 
+{
+	SortSinglePass<false>( gSrcKey, nullptr, gDstKey, nullptr, gN, START_BIT, END_BIT ); 
 }
 
-extern "C" __global__ void SortSinglePassKVKernel( int* gSrcKey, int* gSrcVal, int* gDstKey, int* gDstVal, int gN, const int START_BIT, const int END_BIT )
+extern "C" __global__ void SortSinglePassKVKernel( int* gSrcKey, int* gSrcVal, int* gDstKey, int* gDstVal, int gN, const int START_BIT, const int END_BIT ) 
 { 
 	SortSinglePass<true>( gSrcKey, gSrcVal, gDstKey, gDstVal, gN, START_BIT, END_BIT ); 
 }
 
+extern "C" __global__ void SortKernel( int* gSrcKey, int* gDstKey, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
+{
+	SortImpl<false>( gSrcKey, nullptr, gDstKey, nullptr, gHistogram, gN, gNItemsPerWI, START_BIT, N_WGS_EXECUTED );
+}
+
+extern "C" __global__ void SortKVKernel( int* gSrcKey, int* gSrcVal, int* gDstKey, int* gDstVal, int* gHistogram, int gN, int gNItemsPerWI, const int START_BIT, const int N_WGS_EXECUTED )
+{
+	SortImpl<true>( gSrcKey, gSrcVal, gDstKey, gDstVal, gHistogram, gN, gNItemsPerWI, START_BIT, N_WGS_EXECUTED );
+}
 
 extern "C" __global__ void ParallelExclusiveScanSingleWG( int* gCount, int* gHistogram, const int N_WGS_EXECUTED )
 {

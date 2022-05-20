@@ -116,7 +116,7 @@ class SortTest
 			OrochiUtils::waitForCompletion();
 			sw.stop();
 			float ms = sw.getMs();
-			float gKeys_s = testSize / 1000.f / 1000.f / ms;
+			float gKeys_s = static_cast<float>(testSize) / 1000.f / 1000.f / ms;
 			printf( "%3.2fms (%3.2fGKeys/s) sorting %3.1fMkeys [%s]\n", ms, gKeys_s, testSize / 1000.f / 1000.f, KEY_VALUE_PAIR? "keyValue":"keyOnly" );
 		}
 
@@ -138,7 +138,7 @@ class SortTest
 		{
 			std::vector<u32> tmpBuffer( std::size( targetBuffer ) );
 
-			for( int i = 0; i < std::size( targetBuffer ); ++i )
+			for( auto i = 0UL; i < std::size( targetBuffer ); ++i )
 			{
 				tmpBuffer[i] = targetBuffer[indexBuffer[i]];
 			}
@@ -152,7 +152,7 @@ class SortTest
 			rearrange( srcValue, indexHelper );
 		}
 
-		const auto check = [&]( const int i ) noexcept
+		const auto check = [&]( const size_t i ) noexcept
 		{
 			if constexpr( KEY_VALUE_PAIR )
 			{
@@ -247,6 +247,9 @@ int main( int argc, char** argv )
 	{
 		sort.test<false>( 128 * 10, testBits, 10 );
 		sort.test( 128 * 10, testBits, 10 );
+		const int testBits = 16;
+		sort.test<false>(128 * 10, testBits, 10);
+		sort.test(128 * 10, testBits, 10);
 	}
 	break;
 	case TEST_SIMPLE:

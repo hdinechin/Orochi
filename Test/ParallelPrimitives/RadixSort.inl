@@ -1,3 +1,5 @@
+
+
 template<class T>
 void RadixSort::sort1pass( const T src, const T dst, int n, int startBit, int endBit, int* temps ) noexcept
 {
@@ -101,18 +103,15 @@ void RadixSort::sort1pass( const T src, const T dst, int n, int startBit, int en
 		Stopwatch sw;
 		sw.start();
 
-		const auto func{ reference ? oroFunctions[Kernel::SORT_REF] : oroFunctions[Kernel::SORT] };
-
 		if constexpr( keyValuePairedEnabled )
 		{
 			const void* args[] = { &srcKey, &srcVal, &dstKey, &dstVal, &temps, &n, &nItemsPerWI, &startBit, &m_nWGsToExecute };
-			OrochiUtils::launch1D( func, SORT_WG_SIZE * m_nWGsToExecute, args, SORT_WG_SIZE );
+			OrochiUtils::launch1D(oroFunctions[Kernel::SORT_KV], SORT_WG_SIZE * m_nWGsToExecute, args, SORT_WG_SIZE );
 		}
 		else
 		{
-			u32* placeholder = nullptr;
-			const void* args[] = { &srcKey, &placeholder, &dstKey, &placeholder, &temps, &n, &nItemsPerWI, &startBit, &m_nWGsToExecute };
-			OrochiUtils::launch1D( func, SORT_WG_SIZE * m_nWGsToExecute, args, SORT_WG_SIZE );
+			const void* args[] = { &srcKey, &dstKey, &temps, &n, &nItemsPerWI, &startBit, &m_nWGsToExecute };
+			OrochiUtils::launch1D(oroFunctions[Kernel::SORT], SORT_WG_SIZE * m_nWGsToExecute, args, SORT_WG_SIZE );
 		}
 
 #if defined( PROFILE )

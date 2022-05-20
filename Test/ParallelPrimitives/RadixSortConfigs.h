@@ -29,6 +29,4 @@ constexpr auto SINGLE_SORT_WG_SIZE{ 128 };
 // scan configs
 constexpr auto SCAN_WG_SIZE{ BIN_SIZE };
 
-constexpr auto KEY_VALUE_PAIR_ENABLED{ true };
-
 }; // namespace Oro

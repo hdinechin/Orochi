@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Orochi/Orochi.h>
-#include <Test/ParallelPrimitives/RadixSortConfigs.h>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+
+#include "Test/ParallelPrimitives/RadixSortConfigs.h"
 
 //#define PROFILE 1
 
@@ -64,7 +65,7 @@ class RadixSort
 		SCAN_SINGLE_WG,
 		SCAN_PARALLEL,
 		SORT,
-		SORT_REF,
+		SORT_KV,
 		SORT_SINGLE_PASS,
 		SORT_SINGLE_PASS_KV,
 	};
@@ -85,6 +86,6 @@ class RadixSort
 	bool* m_isReady{ nullptr };
 };
 
-#include <Test/ParallelPrimitives/RadixSort.inl>
+#include "Test/ParallelPrimitives/RadixSort.inl"
 
 }; // namespace Oro

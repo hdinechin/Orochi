@@ -101,8 +101,8 @@ void RadixSort::compileKernels( oroDevice device )
 	oroFunctions[Kernel::SORT] = OrochiUtils::getFunctionFromFile( device, kernelPath, "SortKernel", &opts );
 	if( m_flags & FLAG_LOG ) printKernelInfo( oroFunctions[Kernel::SORT] );
 
-	oroFunctions[Kernel::SORT_REF] = OrochiUtils::getFunctionFromFile( device, kernelPath, "SortKernelReference", &opts );
-	if( m_flags & FLAG_LOG ) printKernelInfo( oroFunctions[Kernel::SORT_REF] );
+	oroFunctions[Kernel::SORT_KV] = OrochiUtils::getFunctionFromFile(device, kernelPath, "SortKVKernel", &opts);
+	if (m_flags & FLAG_LOG) printKernelInfo(oroFunctions[Kernel::SORT_KV]);
 
 	oroFunctions[Kernel::SORT_SINGLE_PASS] = OrochiUtils::getFunctionFromFile( device, kernelPath, "SortSinglePassKernel", &opts );
 	if( m_flags & FLAG_LOG ) printKernelInfo( oroFunctions[Kernel::SORT_SINGLE_PASS] );
@@ -200,7 +200,6 @@ void RadixSort::sort( const u32* src, const u32* dst, int n, int startBit, int e
 	if( n < SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI )
 	{
 		const auto func = oroFunctions[Kernel::SORT_SINGLE_PASS];
-		u32* placeholder = nullptr;
 		const void* args[] = { &src, &dst, &n, &startBit, &endBit };
 		OrochiUtils::launch1D( func, SINGLE_SORT_WG_SIZE, args, SINGLE_SORT_WG_SIZE );
 		return;
