@@ -5,7 +5,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "Test/ParallelPrimitives/RadixSortConfigs.h"
+#include <ParallelPrimitives/RadixSortConfigs.h>
 
 //#define PROFILE 1
 
@@ -86,6 +86,6 @@ class RadixSort
 	bool* m_isReady{ nullptr };
 };
 
-#include "Test/ParallelPrimitives/RadixSort.inl"
+#include <ParallelPrimitives/RadixSort.inl>
 
 }; // namespace Oro

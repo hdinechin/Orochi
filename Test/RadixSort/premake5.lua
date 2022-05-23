@@ -12,5 +12,4 @@ project "RadixSort"
       files { "../../Orochi/**.h", "../../Orochi/**.cpp" }
       files { "../../contrib/**.h", "../../contrib/**.cpp" }
       files { "*.cpp" }
-      files { "../ParallelPrimitives/**.h", "../ParallelPrimitives/**.cpp" }
-      files { "../OrochiUtils.h", "../OrochiUtils.cpp" }
+      files { "../../ParallelPrimitives/**.h", "../../ParallelPrimitives/**.cpp" }

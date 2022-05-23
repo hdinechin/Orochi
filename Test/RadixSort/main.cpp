@@ -23,9 +23,9 @@
 #include <Orochi/Orochi.h>
 #include <Test/Common.h>
 
-#include <Test/OrochiUtils.h>
-#include <Test/ParallelPrimitives/RadixSort.h>
-#include <Test/ParallelPrimitives/RadixSortConfigs.h>
+#include <Orochi/OrochiUtils.h>
+#include <ParallelPrimitives/RadixSort.h>
+#include <ParallelPrimitives/RadixSortConfigs.h>
 #include <algorithm>
 #include <vector>
 #include <numeric>

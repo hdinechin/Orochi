@@ -1,5 +1,5 @@
-#include <Test/OrochiUtils.h>
-#include <Test/ParallelPrimitives/RadixSort.h>
+#include <Orochi/OrochiUtils.h>
+#include <ParallelPrimitives/RadixSort.h>
 #include <numeric>
 #include <array>
 #include <algorithm>

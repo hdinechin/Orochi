@@ -1,4 +1,4 @@
-#include <Test/ParallelPrimitives/RadixSortConfigs.h>
+#include <ParallelPrimitives/RadixSortConfigs.h>
 #define LDS_BARRIER __syncthreads()
 
 using namespace Oro;
