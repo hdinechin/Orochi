@@ -402,7 +402,7 @@ oroFunction OrochiUtils::getFunctionFromFile( oroDevice device, const char* path
 oroFunction OrochiUtils::getFunction( oroDevice device, const char* code, const char* path, const char* funcName, std::vector<const char*>* optsIn )
 {
 	std::vector<const char*> opts;
-	opts.push_back( "-std=c++14" );
+	opts.push_back( "-std=c++17" );
 
 	if( optsIn )
 	{
