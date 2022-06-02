@@ -43,10 +43,6 @@ if len(argvs) >= 2:
 print( '#pragma once' )
 
 
-# Detect API (CL, CU or Metal). Should probably abort here if we detect a mix of extensions
-api = 'cl' if any(name.endswith('cl') for name in files) else 'metal'
-if(api == 'metal'):
-    api = 'cu' if any(name.endswith('cu') for name in files) else 'metal'
 api = 'hip'
 
 # Visit each file
