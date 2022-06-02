@@ -110,7 +110,6 @@ if len(argvs) >= 2:
 if len(argvs) >= 3:
     ekey = argvs[2]
 
-#files = ['IntegratorGpuLightSamplerTestKernel.cl','Math.cl']
 
 api = 'cl' if any(name.endswith('cl') for name in files) else 'metal'
 if (api == 'metal'):
