@@ -28,7 +28,6 @@ def encrypt(message, key):
     msg = file1.read()
     file1.close()
     return msg
-#    return subprocess.check_output(['./adl/contrib/lib/ee/win/ee64', message, key, "0"]).decode('utf8').strip()
 
 def registerDefs(line):
     global defines
