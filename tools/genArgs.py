@@ -42,13 +42,6 @@ if len(argvs) >= 2:
 
 print( '#pragma once' )
 
-# Looking for CL, CU/HIP and Metal files
-#extensions = ['cl', 'metal', 'cu']
-#files = [name for name in files if any(name.endswith(ext) for ext in extensions)]
-
-# Filter out inlines
-#extensions = ['.inl.cl', '.inl.cu' '.inl.metal', 'MetalHeader.metal']		# FIXME so we don't need to filter this explicitly
-#files = [name for name in files if not any(name.endswith(ext) for ext in extensions)]
 
 # Detect API (CL, CU or Metal). Should probably abort here if we detect a mix of extensions
 api = 'cl' if any(name.endswith('cl') for name in files) else 'metal'
