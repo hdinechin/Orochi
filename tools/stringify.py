@@ -59,9 +59,9 @@ def printfile(filename, ans, enablePrint, api):
             if a.find('#undef') == -1:
                 a = replaceDefines( a )
             if( ekey != '' ):
-            b = a
+                b = a
             else:
-            b = ('"'+a.replace("\"", "\\\"").replace("'", "\\'") + '\\n"')
+                b = ('"'+a.replace("\"", "\\\"").replace("'", "\\'") + '\\n"')
             ans += ''+b+'\n'
         return ans
 
