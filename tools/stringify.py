@@ -108,9 +108,6 @@ if len(argvs) >= 3:
     ekey = argvs[2]
 
 
-api = 'cl' if any(name.endswith('cl') for name in files) else 'metal'
-if (api == 'metal'):
-    api = 'cu' if any(name.endswith('cu') for name in files) else 'metal'
 
 api = 'hip'
 
