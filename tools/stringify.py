@@ -10,24 +10,6 @@ ekey = ''
 defines = {}
 replaced = []
 
-def encrypt(message, key):
-    file = open('./tmp.txt',mode='w')
-    file.write(message)
-    file.close()
-    binary = ''
-    if platform.system() == 'Windows':
-        binary = './adl/contrib/src/easy-encryption/bin/win/ee64'
-    elif platform.system() == 'Darwin':
-        binary = './adl/contrib/src/easy-encryption/bin/macos/ee64'
-    else:
-        binary = './adl/contrib/src/easy-encryption/bin/linux/ee64'
-
-    subprocess.check_output([binary, './tmp.txt', './tmp.bin', key, "0"])
-
-    file1 = open('./tmp.bin',mode='r')
-    msg = file1.read()
-    file1.close()
-    return msg
 
 def registerDefs(line):
     global defines
@@ -58,39 +40,39 @@ def removeLeadingSpace( src ):
     return src.lstrip(' ').rstrip(' ')
 
 def printfile(filename, ans, enablePrint, api):
-    fh = open(filename)
-
-    for line in fh.readlines():
-        a = line.strip('\r\n')
-        a = removeLeadingSpace( a )
-        if a.startswith('//'):
-            continue
-        if a.find('#include') != -1 and (a.find('inl.cl') != -1 or a.find('inl.metal') != -1 or a.find('inl.cu') != -1):
-            head, tail = os.path.split(a)
-            tail = dir + tail
-            tail = tail.replace( '>', '' )
-            printfile( tail, ans, 0, api )
-        if a.find('#include') != -1 and (api != 'hip'):
-            continue
-        if a.find('#define') == 0:
-            if registerDefs( a ) == 1:
+    with open(filename) as fh:
+        for line in fh.readlines():
+            a = line.strip('\r\n')
+            a = removeLeadingSpace( a )
+            if a.startswith('//'):
                 continue
-        if a.find('#undef') == -1:
-            a = replaceDefines( a )
-        if( ekey != '' ):
-          b = a
-        else:
-          b = ('"'+a.replace("\"", "\\\"").replace("'", "\\'") + '\\n"')
-        ans += ''+b+'\n'
-    return ans
+            if a.find('#include') != -1 and (a.find('inl.cl') != -1 or a.find('inl.metal') != -1 or a.find('inl.cu') != -1):
+                head, tail = os.path.split(a)
+                tail = dir + tail
+                tail = tail.replace( '>', '' )
+                printfile( tail, ans, 0, api )
+            if a.find('#include') != -1 and (api != 'hip'):
+                continue
+            if a.find('#define') == 0:
+                if registerDefs( a ) == 1:
+                    continue
+            if a.find('#undef') == -1:
+                a = replaceDefines( a )
+            if( ekey != '' ):
+            b = a
+            else:
+            b = ('"'+a.replace("\"", "\\\"").replace("'", "\\'") + '\\n"')
+            ans += ''+b+'\n'
+        return ans
 
 def stringify(filename, stringname, api):
     print ('static const char* '+stringname+'= \\')
     ans = ''
     ans = printfile( filename, ans, 1, api )
     if( ekey != '' ):
-        ans = encrypt( ans, ekey )
-#    print( '"'+ans+'";' )
+
+        # TODO: missing encrypt
+
         chars_per_line = 255
         for i in range(0, len(ans), chars_per_line):
             print( '"'+ans[i:i+chars_per_line]+'"\\')
@@ -119,7 +101,6 @@ for file in files:
     stringname = file.replace('.cl', '').replace('.cu', '').replace('.metal', '').replace('.h', '')
     stringname = api + '_'+stringname.split('/')[-1]
     stringify( dir+file, stringname, api )
-#    print (stringname)
 
 for file in files:
     if file.find('Math.')!=-1:
