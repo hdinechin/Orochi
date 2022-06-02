@@ -88,8 +88,6 @@ def stringify(filename, stringname, api):
     print ('static const char* '+stringname+'= \\')
     ans = ''
     ans = printfile( filename, ans, 1, api )
-#    print(len(ans))
-#    print( ans )
     if( ekey != '' ):
         ans = encrypt( ans, ekey )
 #    print( '"'+ans+'";' )
