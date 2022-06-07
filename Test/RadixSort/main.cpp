@@ -52,7 +52,7 @@ using u32 = Oro::RadixSort::u32;
 class SortTest
 {
   public:
-	SortTest( oroDevice dev, oroCtx ctx, OrochiUtils* oroutils ) : m_device( dev ), m_ctx( ctx )
+	SortTest( oroDevice dev, oroCtx ctx, OrochiUtils& oroutils ) : m_device( dev ), m_ctx( ctx )
 	{
 		const auto s = m_sort.configure( m_device, oroutils );
 		OrochiUtils::malloc( m_tempBuffer, s );
@@ -238,7 +238,7 @@ int main( int argc, char** argv )
 	}
 
 	OrochiUtils oroutils;
-	SortTest sort( device, ctx, &oroutils );
+	SortTest sort( device, ctx, oroutils );
 	const int testBits = 32;
 	switch( testType )
 	{

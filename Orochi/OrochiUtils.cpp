@@ -392,7 +392,7 @@ OrochiUtils::~OrochiUtils()
 
 oroFunction OrochiUtils::getFunctionFromFile( oroDevice device, const char* path, const char* funcName, std::vector<const char*>* optsIn )
 { 
-	std::string cacheName = OrochiUtilsImpl::getCacheName( path, funcName );
+	const std::string cacheName = OrochiUtilsImpl::getCacheName( path, funcName );
 	if( m_kernelMap.find( cacheName.c_str() ) != m_kernelMap.end() )
 	{
 		return m_kernelMap[ cacheName ];
@@ -410,7 +410,7 @@ oroFunction OrochiUtils::getFunctionFromFile( oroDevice device, const char* path
 oroFunction OrochiUtils::getFunctionFromString( oroDevice device, const char* source, const char* path, const char* funcName, std::vector<const char*>* optsIn, 
 	int numHeaders, const char** headers, const char** includeNames ) 
 {
-	std::string cacheName = OrochiUtilsImpl::getCacheName( path, funcName );
+	const std::string cacheName = OrochiUtilsImpl::getCacheName( path, funcName );
 	if( m_kernelMap.find( cacheName.c_str() ) != m_kernelMap.end() )
 	{
 		return m_kernelMap[cacheName];

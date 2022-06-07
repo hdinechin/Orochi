@@ -1,7 +1,7 @@
 #pragma once
 #include <Orochi/Orochi.h>
 #include <vector>
-#include <map>
+#include <unordered_map>
 #include <string>
 
 #if defined(_WIN32)
@@ -71,5 +71,5 @@ class OrochiUtils
 
 public:
 	std::string m_cacheDirectory;
-	std::map<std::string, oroFunction> m_kernelMap;
+	std::unordered_map<std::string, oroFunction> m_kernelMap;
 };
