@@ -481,6 +481,7 @@ oroFunction OrochiUtils::getFunction( oroDevice device, const char* code, const 
 	oroModule module;
 	oroError ee = oroModuleLoadData( &module, codec.data() );
 	ee = oroModuleGetFunction( &function, module, funcName );
+	OROASSERT( ee == oroSuccess, 0 );
 
 	return function;
 }
