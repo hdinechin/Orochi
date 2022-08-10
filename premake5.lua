@@ -1,3 +1,8 @@
+newoption {
+    trigger = "bakeKernel",
+    description = "bakeKernel"
+}
+
 function copydir(src_dir, dst_dir, filter, single_dst_dir)
 	if not os.isdir(src_dir) then
 		printError("'%s' is not an existing directory!", src_dir)
@@ -37,6 +42,7 @@ workspace "YamatanoOrochi"
    platforms "x64"
    architecture "x86_64"
    cppdialect "C++17"
+
    if os.istarget("windows") then
      defines{ "__WINDOWS__" }
      characterset ("MBCS")
@@ -48,10 +54,12 @@ workspace "YamatanoOrochi"
    if os.istarget("linux") then
       links { "dl" }
    end
+
   filter {"platforms:x64", "configurations:Debug"}
      targetsuffix "64D"
      defines { "DEBUG" }
      symbols "On"
+
   filter {"platforms:x64", "configurations:Release"}
      targetsuffix "64"
      defines { "NDEBUG" }
@@ -64,15 +72,18 @@ workspace "YamatanoOrochi"
    defines { "_CRT_SECURE_NO_WARNINGS" }
    startproject "Unittest"
 
-    copydir("./contrib/bin/win64", "./dist/bin/Debug/")
-    copydir("./contrib/bin/win64", "./dist/bin/Release/")
+	if _OPTIONS["bakeKernel"] then
+		defines { "ORO_PP_LOAD_FROM_STRING" }
+		os.execute(".\\tools\\bakeKernel.bat")
+	end
 
+   copydir("./contrib/bin/win64", "./dist/bin/Debug/")
+   copydir("./contrib/bin/win64", "./dist/bin/Release/")
+   
    include "./UnitTest"
    group "Samples"
    	include "./Test"
    	include "./Test/DeviceEnum"
-   
-     if os.istarget("windows") then
-        group "Advanced"
-        include "./Test/VulkanComputeSimple"
-     end
+   group "Advanced"
+      include "./Test/VulkanComputeSimple"
+      include "./Test/RadixSort"
