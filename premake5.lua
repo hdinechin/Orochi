@@ -2,10 +2,6 @@ newoption {
     trigger = "bakeKernel",
     description = "bakeKernel"
 }
-newoption {
-    trigger = "buildSamples",
-    description = "build samples and advanced samples"
-}
 
 function copydir(src_dir, dst_dir, filter, single_dst_dir)
 	if not os.isdir(src_dir) then
@@ -85,11 +81,11 @@ workspace "YamatanoOrochi"
    copydir("./contrib/bin/win64", "./dist/bin/Release/")
    
    include "./UnitTest"
-   if _OPTIONS["buildSamples"] then
+   --if _OPTIONS["buildSamples"] then
 		group "Samples"
 			include "./Test"
 			include "./Test/DeviceEnum"
 		group "Advanced"
 			include "./Test/VulkanComputeSimple"
 			include "./Test/RadixSort"
-	end
+	--end
