@@ -85,7 +85,9 @@ workspace "YamatanoOrochi"
 		group "Samples"
 			include "./Test"
 			include "./Test/DeviceEnum"
+	if os.istarget("windows") then
 		group "Advanced"
 			include "./Test/VulkanComputeSimple"
 			include "./Test/RadixSort"
+	end
 	--end
