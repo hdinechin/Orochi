@@ -592,10 +592,10 @@ void OrochiUtils::getProgram( oroDevice device, const char* code, const char* pa
 	return;
 }
 
-void OrochiUtils::launch1D( oroFunction func, int nx, const void** args, int wgSize, unsigned int sharedMemBytes ) 
+void OrochiUtils::launch1D( oroFunction func, int nx, const void** args, int wgSize, unsigned int sharedMemBytes, oroStream stream ) 
 {
 	int4 tpb = { wgSize, 1, 0 };
 	int4 nb = { ( nx + tpb.x - 1 ) / tpb.x, 1, 0 };
-	oroError e = oroModuleLaunchKernel( func, nb.x, nb.y, 1, tpb.x, tpb.y, 1, sharedMemBytes, 0, (void**)args, 0 );
+	oroError e = oroModuleLaunchKernel( func, nb.x, nb.y, 1, tpb.x, tpb.y, 1, sharedMemBytes, stream, (void**)args, 0 );
 	OROASSERT( e == oroSuccess, 0 );
 }
