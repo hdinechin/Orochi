@@ -70,8 +70,6 @@ void RadixSort::exclusiveScanCpu( int* countsGpu, int* offsetsGpu, const int nWG
 
 void RadixSort::compileKernels( oroDevice device, OrochiUtils& oroutils, const std::string& kernelPath, const std::string& includeDir ) noexcept
 {
-	std::lock_guard<std::mutex> lock( mutex );
-
 	constexpr auto defaultKernelPath{ "../ParallelPrimitives/RadixSortKernels.h" };
 	constexpr auto defaultIncludeDir{ "../" };
 

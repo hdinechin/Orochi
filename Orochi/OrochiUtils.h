@@ -3,6 +3,7 @@
 #include <vector>
 #include <unordered_map>
 #include <string>
+#include <mutex>
 
 #if defined(_WIN32)
 	#define OROASSERT(x, y) if(!(x)) {__debugbreak();}
@@ -105,5 +106,6 @@ class OrochiUtils
 
 public:
 	std::string m_cacheDirectory;
+	std::mutex m_mutex;
 	std::unordered_map<std::string, oroFunction> m_kernelMap;
 };

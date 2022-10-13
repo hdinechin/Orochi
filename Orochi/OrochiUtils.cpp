@@ -397,6 +397,8 @@ bool OrochiUtils::readSourceCode( const std::string& path, std::string& sourceCo
 
 oroFunction OrochiUtils::getFunctionFromFile( oroDevice device, const char* path, const char* funcName, std::vector<const char*>* optsIn )
 { 
+	std::lock_guard<std::mutex> lock( m_mutex );
+
 	const std::string cacheName = OrochiUtilsImpl::getCacheName( path, funcName );
 	if( m_kernelMap.find( cacheName.c_str() ) != m_kernelMap.end() )
 	{

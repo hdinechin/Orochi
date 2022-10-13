@@ -5,7 +5,6 @@
 #include <string>
 #include <unordered_map>
 #include <cmath>
-#include <mutex>
 #include <ParallelPrimitives/RadixSortConfigs.h>
 #include <Test/Stopwatch.h>
 #include <Orochi/OrochiUtils.h>
@@ -90,8 +89,7 @@ class RadixSort
 		SORT_SINGLE_PASS_KV,
 	};
 
-	static std::mutex mutex;
-	static std::unordered_map<Kernel, oroFunction> oroFunctions;
+	std::unordered_map<Kernel, oroFunction> oroFunctions;
 
 	/// @brief  The enum class which indicates the selected algorithm of prefix scan.
 	enum class ScanAlgo
