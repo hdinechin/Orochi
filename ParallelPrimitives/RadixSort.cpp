@@ -70,6 +70,8 @@ void RadixSort::exclusiveScanCpu( int* countsGpu, int* offsetsGpu, const int nWG
 
 void RadixSort::compileKernels( oroDevice device, OrochiUtils& oroutils, const std::string& kernelPath, const std::string& includeDir ) noexcept
 {
+	std::lock_guard<std::mutex> lock( mutex );
+
 	constexpr auto defaultKernelPath{ "../ParallelPrimitives/RadixSortKernels.h" };
 	constexpr auto defaultIncludeDir{ "../" };
 
@@ -131,7 +133,7 @@ int RadixSort::calculateWGsToExecute( oroDevice device ) noexcept
 	return props.multiProcessorCount * occupancy;
 }
 
-RadixSort::u32 RadixSort::configure( oroDevice device, OrochiUtils& oroutils, const std::string& kernelPath, const std::string& includeDir ) noexcept
+RadixSort::u32 RadixSort::configure( oroDevice device, OrochiUtils& oroutils, const std::string& kernelPath, const std::string& includeDir, oroStream stream ) noexcept
 {
 	compileKernels( device, oroutils, kernelPath, includeDir );
 	const auto newWGsToExecute{ calculateWGsToExecute( device ) };

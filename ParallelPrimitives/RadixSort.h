@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_map>
 #include <cmath>
+#include <mutex>
 #include <ParallelPrimitives/RadixSortConfigs.h>
 #include <Test/Stopwatch.h>
 #include <Orochi/OrochiUtils.h>
@@ -46,7 +47,7 @@ class RadixSort
 	/// @param kernelPath The kernel path.
 	/// @param includeDir The include directory.
 	/// @return The size of the temp buffer.
-	u32 configure( oroDevice device, OrochiUtils& oroutils, const std::string& kernelPath = "", const std::string& includeDir = "" ) noexcept;
+	u32 configure( oroDevice device, OrochiUtils& oroutils, const std::string& kernelPath = "", const std::string& includeDir = "", oroStream stream = 0 ) noexcept;
 
 	void setFlag( Flag flag ) noexcept;
 
@@ -89,7 +90,8 @@ class RadixSort
 		SORT_SINGLE_PASS_KV,
 	};
 
-	std::unordered_map<Kernel, oroFunction> oroFunctions;
+	static std::mutex mutex;
+	static std::unordered_map<Kernel, oroFunction> oroFunctions;
 
 	/// @brief  The enum class which indicates the selected algorithm of prefix scan.
 	enum class ScanAlgo
