@@ -504,8 +504,6 @@ oroFunction OrochiUtils::getFunction( oroDevice device, const char* code, const 
 
 void OrochiUtils::getData( oroDevice device, const char* code, const char* path, std::vector<const char*>* optsIn, std::vector<char>& dst )
 {
-	std::lock_guard<std::recursive_mutex> lock( m_mutex );
-
 	std::vector<const char*> opts;
 	opts.push_back( "-std=c++17" );
 
@@ -558,8 +556,6 @@ void OrochiUtils::getData( oroDevice device, const char* code, const char* path,
 
 void OrochiUtils::getProgram( oroDevice device, const char* code, const char* path, std::vector<const char*>* optsIn, const char* funcName, orortcProgram *prog )
 {
-	std::lock_guard<std::recursive_mutex> lock( m_mutex );
-
 	std::vector<const char*> opts;
 	opts.push_back( "-std=c++17" );
 
