@@ -105,7 +105,7 @@ class OrochiUtils
 	}
 
 public:
-	std::string m_cacheDirectory;
-	std::recursive_mutex m_mutex;
-	std::unordered_map<std::string, oroFunction> m_kernelMap;
+	static std::string m_cacheDirectory;
+	static std::recursive_mutex m_mutex;
+	static std::unordered_map<std::string, oroFunction> m_kernelMap;
 };
