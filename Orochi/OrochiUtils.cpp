@@ -381,13 +381,9 @@ struct OrochiUtilsImpl
 	}
 };
 
-
-std::string OrochiUtils::m_cacheDirectory = "./cache/";
-std::recursive_mutex OrochiUtils::m_mutex;
-std::unordered_map<std::string, oroFunction> OrochiUtils::m_kernelMap;
-
 OrochiUtils::OrochiUtils() 
-{
+{ 
+	m_cacheDirectory = "./cache/"; 
 }
 
 OrochiUtils::~OrochiUtils() 
