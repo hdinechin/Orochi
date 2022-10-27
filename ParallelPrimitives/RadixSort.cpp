@@ -5,13 +5,17 @@
 #include <numeric>
 
 #if defined( ORO_PP_LOAD_FROM_STRING )
-#include <ParallelPrimitives/cache/Kernels.h>
 #include <ParallelPrimitives/cache/KernelArgs.h>
+#include <ParallelPrimitives/cache/Kernels.h>
 #endif
 
 namespace
 {
-
+#if defined( ORO_BITCODE_LINKING )
+constexpr auto useBitCode = true;
+#else
+constexpr auto useBitCode = false;
+#endif
 
 void printKernelInfo( oroFunction func )
 {
@@ -76,9 +80,22 @@ void RadixSort::compileKernels( oroDevice device, OrochiUtils& oroutils, const s
 	const auto currentKernelPath{ ( kernelPath == "" ) ? defaultKernelPath : kernelPath };
 	const auto currentIncludeDir{ ( includeDir == "" ) ? defaultIncludeDir : includeDir };
 
-	if( m_flags == Flag::LOG )
+	std::string binaryPath{};
+	if constexpr( useBitCode )
 	{
-		std::cout << "compiling kernels at path : " << currentKernelPath << " in : " << currentIncludeDir << '\n';
+		const bool isAmd = oroGetCurAPI( 0 ) == ORO_API_HIP;
+		binaryPath = isAmd ? "../bitcodes/oro_compiled_kernels.hipfb" : "../bitcodes/oro_compiled_kernels.fatbin";
+		if( m_flags == Flag::LOG )
+		{
+			std::cout << "loading pre-compiled kernels at path : " << binaryPath << '\n';
+		}
+	}
+	else
+	{
+		if( m_flags == Flag::LOG )
+		{
+			std::cout << "compiling kernels at path : " << currentKernelPath << " in : " << currentIncludeDir << '\n';
+		}
 	}
 
 	const auto includeArg{ "-I" + currentIncludeDir };
@@ -100,10 +117,19 @@ void RadixSort::compileKernels( oroDevice device, OrochiUtils& oroutils, const s
 	for( const auto& record : records )
 	{
 #if defined( ORO_PP_LOAD_FROM_STRING )
-		oroFunctions[record.kernelType] = oroutils.getFunctionFromString( device, hip_RadixSortKernels, currentKernelPath.c_str(), record.kernelName.c_str(), &opts,
-			1, hip::RadixSortKernelsArgs, hip::RadixSortKernelsIncludes );
+		oroFunctions[record.kernelType] = oroutils.getFunctionFromString( device, hip_RadixSortKernels, currentKernelPath.c_str(), record.kernelName.c_str(), &opts, 1, hip::RadixSortKernelsArgs, hip::RadixSortKernelsIncludes );
 #else
-		oroFunctions[record.kernelType] = oroutils.getFunctionFromFile( device, currentKernelPath.c_str(), record.kernelName.c_str(), &opts );
+
+		if constexpr( useBitCode )
+		{
+			oroFunctions[record.kernelType] = oroutils.getFunctionFromPrecompiledBinary( binaryPath.c_str(), record.kernelName.c_str() );
+		}
+		else
+		{
+
+			oroFunctions[record.kernelType] = oroutils.getFunctionFromFile( device, currentKernelPath.c_str(), record.kernelName.c_str(), &opts );
+		}
+
 #endif
 		if( m_flags == Flag::LOG )
 		{

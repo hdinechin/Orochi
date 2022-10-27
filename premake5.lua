@@ -3,6 +3,11 @@ newoption {
     description = "bakeKernel"
 }
 
+newoption {
+   trigger = "bitcode",
+   description = "Enable bitcode linking"
+}
+
 function copydir(src_dir, dst_dir, filter, single_dst_dir)
 	if not os.isdir(src_dir) then
 		printError("'%s' is not an existing directory!", src_dir)
@@ -77,6 +82,10 @@ workspace "YamatanoOrochi"
 	if _OPTIONS["bakeKernel"] then
 		defines { "ORO_PP_LOAD_FROM_STRING" }
 		os.execute(".\\tools\\bakeKernel.bat")
+	end
+
+   if _OPTIONS["bitcode"] then
+		defines {"ORO_BITCODE_LINKING"}
 	end
 
    include "./UnitTest"
