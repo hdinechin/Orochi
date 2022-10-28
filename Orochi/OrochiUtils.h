@@ -36,7 +36,7 @@ class OrochiUtils
 	OrochiUtils();
 	~OrochiUtils();
 
-	oroFunction getFunctionFromPrecompiledBinary( const char* path, const char* funcName );
+	oroFunction getFunctionFromPrecompiledBinary( const std::string& path, const std::string& funcName );
 
 	oroFunction getFunctionFromFile( oroDevice device, const char* path, const char* funcName, std::vector<const char*>* opts );
 	oroFunction getFunctionFromString( oroDevice device, const char* source, const char* path, const char* funcName, std::vector<const char*>* opts, int numHeaders, const char** headers, const char** includeNames );

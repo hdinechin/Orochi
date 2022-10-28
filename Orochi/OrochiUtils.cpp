@@ -371,7 +371,7 @@ struct OrochiUtilsImpl
 		return 0;
 	}
 
-	static std::string getCacheName( const char* path, const char* kernelname ) noexcept { return std::string( path ) + kernelname; }
+	static std::string getCacheName( const std::string& path, const std::string& kernelname ) noexcept { return path + kernelname; }
 };
 
 OrochiUtils::OrochiUtils() { m_cacheDirectory = "./cache/"; }
@@ -412,7 +412,7 @@ oroFunction OrochiUtils::getFunctionFromString( oroDevice device, const char* so
 	return f;
 }
 
-oroFunction OrochiUtils::getFunctionFromPrecompiledBinary( const char* path, const char* funcName )
+oroFunction OrochiUtils::getFunctionFromPrecompiledBinary( const std::string& path, const std::string& funcName )
 {
 	std::lock_guard<std::recursive_mutex> lock( m_mutex );
 
@@ -430,7 +430,7 @@ oroFunction OrochiUtils::getFunctionFromPrecompiledBinary( const char* path, con
 	oroError e = oroModuleLoadData( &module, binary.data() );
 	OROASSERT( e == oroSuccess, 0 );
 
-	e = oroModuleGetFunction( &functionOut, module, funcName );
+	e = oroModuleGetFunction( &functionOut, module, funcName.c_str() );
 	OROASSERT( e == oroSuccess, 0 );
 
 	m_kernelMap[cacheName] = functionOut;
