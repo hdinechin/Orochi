@@ -5,8 +5,12 @@
 #include <numeric>
 
 #if defined( ORO_PP_LOAD_FROM_STRING )
-#include <ParallelPrimitives/cache/KernelArgs.h>
+
+// Note: the include order must be in this particular form.
+// clang-format off
 #include <ParallelPrimitives/cache/Kernels.h>
+#include <ParallelPrimitives/cache/KernelArgs.h>
+// clang-format on
 #endif
 
 namespace

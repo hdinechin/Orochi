@@ -5,19 +5,25 @@
 #include <unordered_map>
 #include <vector>
 
-#if defined( _WIN32 )
-#define OROASSERT( x, y )                                                                                                                                                                                                                                      \
-	if( !( x ) )                                                                                                                                                                                                                                               \
-	{                                                                                                                                                                                                                                                          \
-		__debugbreak();                                                                                                                                                                                                                                        \
-	}
-#else
-#define OROASSERT( x, y )                                                                                                                                                                                                                                      \
-	if( !( x ) )                                                                                                                                                                                                                                               \
-	{                                                                                                                                                                                                                                                          \
-		;                                                                                                                                                                                                                                                      \
-	}
+#if defined( GNUC )
+#include <signal.h>
 #endif
+
+template<typename T, typename U>
+constexpr void OROASSERT( T&& exp, [[maybe_unused]] U&& placeholder ) noexcept
+{
+	if( static_cast<bool>( std::forward<T>( exp ) ) != true )
+	{
+
+#if defined( _WIN32 )
+		__debugbreak();
+#elif defined( GNUC )
+		raise( SIGTRAP );
+#else
+		;
+#endif
+	}
+}
 
 class OrochiUtils
 {
