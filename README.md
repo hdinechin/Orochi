@@ -66,7 +66,7 @@ Run premake.
 ```
 ./tools/premake5/win/premake5.exe vs2022
 ```
-Note: add the option `--bitcode` to enable precompiled bitcode
+Note: add the option `--precompiled` to enable precompiled bitcode
 
 Test is a minimum application.
 

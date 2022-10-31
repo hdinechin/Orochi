@@ -4,8 +4,8 @@ newoption {
 }
 
 newoption {
-   trigger = "bitcode",
-   description = "Enable bitcode linking"
+   trigger = "precompiled",
+   description = "Use precompiled kernels"
 }
 
 function copydir(src_dir, dst_dir, filter, single_dst_dir)
@@ -84,8 +84,8 @@ workspace "YamatanoOrochi"
 		os.execute(".\\tools\\bakeKernel.bat")
 	end
 
-   if _OPTIONS["bitcode"] then
-		defines {"ORO_BITCODE_LINKING"}
+   if _OPTIONS["precompiled"] then
+		defines {"ORO_PRECOMPILED"}
 	end
 
    include "./UnitTest"

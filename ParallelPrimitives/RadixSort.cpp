@@ -15,7 +15,7 @@
 
 namespace
 {
-#if defined( ORO_BITCODE_LINKING )
+#if defined( ORO_PRECOMPILED )
 constexpr auto useBitCode = true;
 #else
 constexpr auto useBitCode = false;
