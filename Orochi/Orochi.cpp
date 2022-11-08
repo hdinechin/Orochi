@@ -355,13 +355,13 @@ oroError OROAPI oroDeviceGetAttribute(int* pi, oroDeviceAttribute attrib, oroDev
 	return oroErrorUnknown;
 }
 
-oroError OROAPI oroDeviceGetLimit( size_t* pValue, enum oroLimit limit )
+oroError OROAPI oroDeviceGetLimit( size_t* pValue, oroLimit limit )
 {
 	__ORO_FUNC1( CtxGetLimit( pValue, (CUlimit)limit ), DeviceGetLimit( pValue, (hipLimit_t)limit ) );
 	return oroErrorUnknown;
 }
 
-oroError OROAPI oroDeviceSetLimit( enum oroLimit limit, size_t value )
+oroError OROAPI oroDeviceSetLimit( oroLimit limit, size_t value )
 {
 	__ORO_FUNC1( CtxSetLimit( (CUlimit)limit, value ), DeviceSetLimit( (hipLimit_t)limit, value ) );
 	return oroErrorUnknown;
