@@ -438,10 +438,12 @@ typedef enum oroSharedMemConfig {
 } oroSharedMemConfig;
 
 typedef enum {
-	oroLimitStackSize = 0x0,
-	oroLimitPrintfFifoSize = 0x01,
-	oroLimitMallocHeapSize = 0x02,
-	oroLimitRange
+	ORO_LIMIT_STACK_SIZE = 0x00,
+	ORO_LIMIT_PRINTF_FIFO_SIZE = 0x01,
+	ORO_LIMIT_MALLOC_HEAP_SIZE = 0x02,
+	ORO_LIMIT_DEV_RUNTIME_SYNC_DEPTH = 0x03,
+	ORO_LIMIT_DEV_RUNTIME_PENDING_LAUNCH_COUNT = 0x04,
+	ORO_LIMIT_MAX,
 } oroLimit;
 
 typedef enum PPshared_carveout_enum {
