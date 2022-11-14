@@ -83,6 +83,7 @@ workspace "YamatanoOrochi"
    group "Samples"
    	include "./Test"
    	include "./Test/DeviceEnum"
+   	include "./Test/Math"
    
      if os.istarget("windows") then
         group "Advanced"
