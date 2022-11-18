@@ -598,6 +598,27 @@ void OrochiUtils::getProgram( oroDevice device, const char* code, const char* pa
 	return;
 }
 
+void OrochiUtils::getModule( oroDevice device, const char* code, const char* path, std::vector<const char*>* optsIn, const char* funcName, oroModule* moduleOut ) 
+{ 
+	orortcProgram prog;
+	getProgram( device, code, path, optsIn, funcName, &prog );
+	size_t codeSize;
+	orortcResult e;
+	std::vector<char> codec;
+	e = orortcGetCodeSize( prog, &codeSize );
+	OROASSERT( e == ORORTC_SUCCESS, 0 );
+
+	codec.resize( codeSize );
+	e = orortcGetCode( prog, codec.data() );
+	OROASSERT( e == ORORTC_SUCCESS, 0 );
+	e = orortcDestroyProgram( &prog );
+	OROASSERT( e == ORORTC_SUCCESS, 0 );
+
+	oroError ee = oroModuleLoadData( moduleOut, codec.data() );
+	OROASSERT( ee == oroSuccess, 0 );
+	return;
+}
+
 void OrochiUtils::launch1D( oroFunction func, int nx, const void** args, int wgSize, unsigned int sharedMemBytes, oroStream stream ) 
 {
 	int4 tpb = { wgSize, 1, 0 };
