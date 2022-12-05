@@ -3,6 +3,7 @@ project "simpleD3D12"
 
       targetdir "../../dist/bin/%{cfg.buildcfg}"
       location "../../build/"
+	  debugdir "."
 
       buildoptions { "/wd4244" }
       defines { "GTEST_HAS_TR1_TUPLE=0" }
